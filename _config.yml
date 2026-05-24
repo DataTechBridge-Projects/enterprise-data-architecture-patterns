@@ -9,6 +9,7 @@ kramdown:
 
 header_pages:
   - index.md
+  - browse.md
 
 plugins:
   - jekyll-relative-links
