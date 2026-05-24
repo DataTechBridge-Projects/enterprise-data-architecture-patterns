@@ -7,12 +7,12 @@ kramdown:
   input: GFM
   hard_wrap: false
 
+header_pages:
+  - index.md
+
 plugins:
   - jekyll-relative-links
 
 relative_links:
   enabled: true
   collections: true
-
-include:
-  - "*.md"
