@@ -1,0 +1,6 @@
+.claude/
+_site/
+.jekyll-cache/
+.sass-cache/
+*.gem
+Gemfile.lock

@@ -79,6 +79,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Ingestion layer → Staging → EDW → Data Marts → Semantic Layer → BI.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Kimball** | Star/Snowflake schema; fact + dimension tables; optimized for business user queries |
@@ -112,6 +113,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Ingestion → Object Storage (Landing Zone) → Cataloging → Processing → Consumption.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Schema-on-Read** | Raw files landed as-is; schema applied at query time |
@@ -142,6 +144,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Ingestion → Object Storage + Open Table Format → Processing → Medallion Layers → Serving.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Medallion (Bronze/Silver/Gold)** | Standard layered approach; most common in lakehouse |
@@ -175,6 +178,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Event Sources → Event Broker → Stream Processor → Serving Store → Consumers.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Kappa Architecture** | Single streaming path; batch views rebuilt by replaying the stream |
@@ -207,6 +211,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Domain Data Products + Self-Serve Platform + Federated Governance + Interoperability Standards.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Domain-Aligned Lakehouse** | Each domain owns a Lakehouse; Gold layer = data product output |
@@ -238,6 +243,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Metadata Layer → Virtual Integration / Query Federation → Active Governance → Unified Access API.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Virtual / Federation-First** | No data movement; all access via federated query |
@@ -268,6 +274,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** OLTP Source → CDC / Direct Query → ODS / HTAP Store → Operational BI / API.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **ODS (Operational Data Store)** | Integrated near-real-time copy of operational data; light transformation |
@@ -299,6 +306,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Feature Store (Online + Offline) → Model Registry → Serving Layer → Vector Store + Embedding Pipeline → LLM Orchestration.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Feature Store–Centric** | Central registry of features; shared across model training and inference |
@@ -332,6 +340,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Data Classification → Access Control (RBAC/ABAC) → Masking/Tokenization → Lineage + Audit → Residency Enforcement → Consent Management.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Centralized Governed Warehouse** | Single governed store with strict access tiers |
@@ -365,6 +374,7 @@ Format: `[Cloud] [Tool Stack] — [Notes]`
 **Core components:** Transformation Layer (dbt) → Semantic / Metric Layer → BI / Exploration Tools → Data Catalog (discovery) → Governance Guardrails.
 
 #### Axis 1 — Modeling Variants
+
 | Variant | Description |
 |---------|-------------|
 | **Kimball Gold Layer + Semantic Layer** | dbt builds dimensional Gold; semantic layer exposes metrics |
