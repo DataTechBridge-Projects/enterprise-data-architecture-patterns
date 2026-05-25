@@ -85,3 +85,30 @@ AXIS 3 — Tool Stack               AXIS 4 — Processing Paradigm
 | 3.7 | Multi-Cloud | Fully Managed | Databricks + Delta Lake + dbt Cloud + Tableau |
 | 3.8 | Multi-Cloud | OSS Portable | S3/ADLS/GCS + Iceberg + Spark + dbt Core + Trino |
 | 3.9 | Hybrid | OSS Self-Hosted | MinIO + Iceberg + Spark on K8s + dbt Core + Airflow |
+
+### Pattern 04 — Streaming / Event-Driven Data Platform
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 4.1 | AWS | Fully Managed | Kinesis + MSK + Flink on KDA + DynamoDB / Redshift |
+| 4.2 | AWS | OSS on Cloud | Kafka on MSK + Apache Flink on EMR + Cassandra / Iceberg |
+| 4.3 | Azure | Fully Managed | Event Hubs + Azure Stream Analytics + Cosmos DB + Synapse |
+| 4.4 | Azure | OSS on Cloud | Event Hubs (Kafka API) + Apache Flink on AKS + Delta Lake |
+| 4.5 | GCP | Fully Managed | Pub/Sub + Dataflow (Beam) + BigQuery Streaming + Bigtable |
+| 4.6 | GCP | OSS on Cloud | Pub/Sub + Apache Flink on GKE + Iceberg on GCS |
+| 4.7 | Multi-Cloud | Fully Managed | Confluent Cloud + Flink Cloud + Snowflake Streaming |
+| 4.8 | Multi-Cloud | OSS Portable | Apache Kafka + Apache Flink + Apache Iceberg + ksqlDB |
+| 4.9 | Hybrid | OSS Self-Hosted | Kafka on K8s + Flink on K8s + Cassandra + MinIO |
+
+### Pattern 05 — Data Mesh
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 5.1 | AWS | Fully Managed | S3 + Lake Formation + Glue Catalog + Redshift + AWS DataZone |
+| 5.2 | AWS | OSS on Cloud | S3 + Iceberg + Trino + DataHub + dbt Core + Airflow |
+| 5.3 | Azure | Fully Managed | ADLS + Purview + Synapse (per domain) + ADF + dbt Cloud |
+| 5.4 | Azure | OSS on Cloud | ADLS + Delta Lake + DataHub + dbt Core + Airflow on AKS |
+| 5.5 | GCP | Fully Managed | GCS + Dataplex + BigQuery (per domain) + Analytics Hub + dbt Cloud |
+| 5.6 | GCP | OSS on Cloud | GCS + Iceberg + DataHub + dbt Core + Trino on GKE + Airflow |
+| 5.7 | Multi-Cloud | Fully Managed | Databricks Unity Catalog + Delta Lake + dbt Cloud + Collibra |
+| 5.8 | Multi-Cloud | OSS Portable | Iceberg + Nessie Catalog + DataHub + OpenMetadata + dbt Core + Trino |
