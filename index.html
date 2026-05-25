@@ -278,6 +278,27 @@ const BASE = location.pathname.replace(/\/$/, '');
 
 const NAV = [
   {
+    id: '01', label: 'Pattern 01 — Enterprise Data Warehouse',
+    groups: [
+      { label: 'AWS', items: [
+        { id: '1.1-aws-managed',        label: '1.1 · AWS Fully Managed',       badge: 'managed', path: 'patterns/01-enterprise-data-warehouse/implementations/1.1-aws-managed/README.md' },
+        { id: '1.2-aws-oss',            label: '1.2 · AWS OSS on Cloud',        badge: 'oss',     path: 'patterns/01-enterprise-data-warehouse/implementations/1.2-aws-oss/README.md' },
+      ]},
+      { label: 'Azure', items: [
+        { id: '1.3-azure-managed',      label: '1.3 · Azure Fully Managed',     badge: 'managed', path: 'patterns/01-enterprise-data-warehouse/implementations/1.3-azure-managed/README.md' },
+        { id: '1.4-azure-oss',          label: '1.4 · Azure OSS on Cloud',      badge: 'oss',     path: 'patterns/01-enterprise-data-warehouse/implementations/1.4-azure-oss/README.md' },
+      ]},
+      { label: 'GCP', items: [
+        { id: '1.5-gcp-managed',        label: '1.5 · GCP Fully Managed',       badge: 'managed', path: 'patterns/01-enterprise-data-warehouse/implementations/1.5-gcp-managed/README.md' },
+        { id: '1.6-gcp-oss',            label: '1.6 · GCP OSS on Cloud',        badge: 'oss',     path: 'patterns/01-enterprise-data-warehouse/implementations/1.6-gcp-oss/README.md' },
+      ]},
+      { label: 'Multi-Cloud', items: [
+        { id: '1.7-multicloud-managed', label: '1.7 · Multi-Cloud Managed',     badge: 'managed', path: 'patterns/01-enterprise-data-warehouse/implementations/1.7-multicloud-managed/README.md' },
+        { id: '1.8-multicloud-oss',     label: '1.8 · Multi-Cloud OSS',         badge: 'oss',     path: 'patterns/01-enterprise-data-warehouse/implementations/1.8-multicloud-oss/README.md' },
+      ]},
+    ]
+  },
+  {
     id: '02', label: 'Pattern 02 — Data Lake',
     groups: [
       { label: 'AWS', items: [
@@ -388,6 +409,29 @@ const NAV = [
       { label: 'Hybrid', items: [
         { id: '6.6-hybrid-managed',         label: '6.6 · Hybrid Fully Managed',    badge: 'managed', path: 'patterns/06-data-fabric/implementations/6.6-hybrid-managed/README.md' },
         { id: '6.7-hybrid-oss-selfhosted',  label: '6.7 · Hybrid OSS Self-Hosted',  badge: 'oss',     path: 'patterns/06-data-fabric/implementations/6.7-hybrid-oss-selfhosted/README.md' },
+      ]},
+    ]
+  },
+  {
+    id: '07', label: 'Pattern 07 — Operational Analytics',
+    groups: [
+      { label: 'AWS', items: [
+        { id: '7.1-aws-managed',          label: '7.1 · AWS Fully Managed',          badge: 'managed', path: 'patterns/07-operational-analytics/implementations/7.1-aws-managed/README.md' },
+        { id: '7.2-aws-oss',              label: '7.2 · AWS OSS on Cloud',           badge: 'oss',     path: 'patterns/07-operational-analytics/implementations/7.2-aws-oss/README.md' },
+      ]},
+      { label: 'Azure', items: [
+        { id: '7.3-azure-managed',        label: '7.3 · Azure Fully Managed',        badge: 'managed', path: 'patterns/07-operational-analytics/implementations/7.3-azure-managed/README.md' },
+        { id: '7.4-azure-oss',            label: '7.4 · Azure OSS on Cloud',         badge: 'oss',     path: 'patterns/07-operational-analytics/implementations/7.4-azure-oss/README.md' },
+      ]},
+      { label: 'GCP', items: [
+        { id: '7.5-gcp-managed',          label: '7.5 · GCP Fully Managed',          badge: 'managed', path: 'patterns/07-operational-analytics/implementations/7.5-gcp-managed/README.md' },
+        { id: '7.6-gcp-oss',              label: '7.6 · GCP OSS on Cloud',           badge: 'oss',     path: 'patterns/07-operational-analytics/implementations/7.6-gcp-oss/README.md' },
+      ]},
+      { label: 'Multi-Cloud', items: [
+        { id: '7.7-multicloud-managed',   label: '7.7 · Multi-Cloud Managed',        badge: 'managed', path: 'patterns/07-operational-analytics/implementations/7.7-multicloud-managed/README.md' },
+      ]},
+      { label: 'Hybrid', items: [
+        { id: '7.8-hybrid-oss-selfhosted',label: '7.8 · Hybrid OSS Self-Hosted',    badge: 'hybrid',  path: 'patterns/07-operational-analytics/implementations/7.8-hybrid-oss-selfhosted/README.md' },
       ]},
     ]
   },
