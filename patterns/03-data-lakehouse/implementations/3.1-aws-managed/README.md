@@ -13,67 +13,46 @@ title: "3.1 — Data Lakehouse · AWS Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │ RDS /    │  │ SaaS Apps│  │  Files   │  │Clickstream│  │   IoT /  │    │
-│  │ Aurora   │  │(Salesforce│  │(CSV/JSON │  │  / Logs  │  │  Kinesis │    │
-│  │          │  │ SAP etc) │  │  Parquet)│  │          │  │  Events  │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  AWS DMS        │   │  AWS Glue ETL   │   │  Kinesis        │          │
-│  │  (DB → Iceberg  │   │  (SaaS / Files  │   │  Firehose       │          │
-│  │   Bronze CDC)   │   │   → Bronze)     │   │  → S3 Bronze    │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Amazon S3  (Apache Iceberg table format)                         │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  s3://bronze/   │──▶│  s3://silver/   │──▶│  s3://gold/     │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Raw ingest    │   │ • dbt cleanse   │   │ • dbt aggregate │          │
-│  │ • Iceberg ACID  │   │ • MERGE dedup   │   │ • Kimball dims  │          │
-│  │ • metadata/     │   │ • Type-cast     │   │ • BI-ready      │          │
-│  │ • data/*.parquet│   │ • data/*.parquet│   │ • data/*.parquet│          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Iceberg: ACID · time travel · hidden partitioning · schema evolution      │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (register)              ┆ (register)             ┆ (register)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — AWS Glue Data Catalog + Lake Formation              │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Glue Catalog → Iceberg REST endpoint; stores table metadata + snapshots   │
-│  Lake Formation → column masking · row filters · LF-Tag ABAC              │
-│  AWS Macie → PII auto-classification on Bronze                              │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ schema lookup + access enforcement
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Amazon Athena   │   │ Redshift         │   │ SageMaker                    │
-│ (Iceberg native │   │ Spectrum         │   │ (reads Silver via Athena     │
-│  serverless SQL)│   │ (external tables │   │  or direct S3 Iceberg)       │
-│                 │   │  → Power BI /    │   │                              │
-│                 │   │  QuickSight)     │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[RDS / Aurora]
+        S2[SaaS Apps\nSalesforce · SAP]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Clickstream / Logs]
+        S5[IoT / Kinesis Events]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[AWS DMS\nDB → Iceberg Bronze CDC]
+        I2[AWS Glue ETL\nSaaS / Files → Bronze]
+        I3[Kinesis Firehose\n→ S3 Bronze]
+    end
+
+    subgraph STORAGE["Storage — S3 · Apache Iceberg"]
+        Z1[BRONZE\ns3://bronze/\nRaw ingest · ACID]
+        Z2[SILVER\ns3://silver/\ndbt cleanse · MERGE dedup]
+        Z3[GOLD\ns3://gold/\ndbt aggregate · Kimball dims]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nGlue Data Catalog + Lake Formation"]
+        C1[Glue Catalog\nIceberg REST · snapshots]
+        C2[Lake Formation\ncolumn masking · row filters]
+        C3[AWS Macie\nPII classification]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Amazon Athena\nad-hoc SQL · Iceberg native]
+        F2[Redshift Spectrum\nBI · Power BI · QuickSight]
+        F3[SageMaker\nML training · Silver Iceberg]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

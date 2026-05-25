@@ -13,69 +13,46 @@ title: "3.3 — Data Lakehouse · Azure Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │Azure SQL │  │ SaaS Apps│  │  Files   │  │ Event    │  │   IoT /  │    │
-│  │ / Cosmos │  │(Dynamics │  │(CSV/JSON │  │ Hubs     │  │  Azure   │    │
-│  │   DB     │  │  365)    │  │  Parquet)│  │          │  │  IoT Hub │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Azure Data     │   │  Azure          │   │  Event Hubs     │          │
-│  │  Factory        │   │  Databricks     │   │  → Databricks   │          │
-│  │  (CDC / copy)   │   │  Auto Loader    │   │  Structured     │          │
-│  │                 │   │  (file ingest)  │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — ADLS Gen2  (Delta Lake table format)                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  abfss://bronze/│──▶│  abfss://silver/│──▶│  abfss://gold/  │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Auto Loader   │   │ • DLT pipeline  │   │ • dbt Cloud     │          │
-│  │ • Delta APPEND  │   │ • MERGE dedup   │   │ • MERGE models  │          │
-│  │ • _delta_log/   │   │ • Type-cast     │   │ • Kimball dims  │          │
-│  │ • *.parquet     │   │ • *.parquet     │   │ • *.parquet     │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Delta Lake: ACID · time travel · schema enforcement · OPTIMIZE / VACUUM   │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (register)              ┆ (register)             ┆ (register)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Databricks Unity Catalog                            │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Unity Catalog → 3-level namespace: catalog.schema.table                   │
-│  Column masking · row filtering · attribute-based access control (ABAC)    │
-│  Microsoft Purview → data lineage · PII classification · sensitivity labels│
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ schema lookup + access enforcement
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Databricks SQL  │   │ Synapse          │   │ Azure ML                     │
-│ Warehouse       │   │ Analytics        │   │ (reads Silver via            │
-│ (serverless     │   │ (Gold external   │   │  Databricks Feature Store    │
-│  Databricks SQL)│   │  Delta tables)   │   │  or direct ADLS read)        │
-│                 │   │ Power BI         │   │                              │
-│                 │   │ (DirectLake)     │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Azure SQL / Cosmos DB]
+        S2[SaaS Apps\nDynamics 365]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Event Hubs]
+        S5[Azure IoT Hub]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Azure Data Factory\nCDC / copy]
+        I2[Databricks Auto Loader\nfile ingest]
+        I3[Event Hubs → Databricks\nStructured Streaming]
+    end
+
+    subgraph STORAGE["Storage — ADLS Gen2 · Delta Lake"]
+        Z1[BRONZE\nabfss://bronze/\nAuto Loader · Delta APPEND]
+        Z2[SILVER\nabfss://silver/\nDLT pipeline · MERGE dedup]
+        Z3[GOLD\nabfss://gold/\ndbt Cloud · Kimball dims]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nDatabricks Unity Catalog + Purview"]
+        C1[Unity Catalog\n3-level namespace\ncolumn masking · row filtering]
+        C2[Microsoft Purview\nlineage · PII classification]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Databricks SQL Warehouse\nserverless ad-hoc SQL]
+        F2[Synapse Analytics\nGold external Delta tables]
+        F3[Power BI DirectLake\ndashboards]
+        F4[Azure ML\nSilver via Feature Store]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 -. lineage .-> C2
+    C1 --> F1 & F2 & F3
+    Z2 --> F4
 ```
 
 ---

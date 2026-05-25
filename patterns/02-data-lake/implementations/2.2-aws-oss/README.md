@@ -13,64 +13,48 @@ title: "2.2 — Data Lake · AWS OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ RDS /    │  │ SaaS APIs│  │  Files   │  │  Kafka   │  │   IoT /  │   │
-│  │ Aurora   │  │          │  │          │  │  Topics  │  │  Events  │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Debezium       │  │  Airbyte        │  │  Kafka Connect  │            │
-│  │  (CDC via WAL)  │  │  (SaaS / Files) │  │  S3 Sink        │            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-└───────────┼────────────────────┼────────────────────┼────────────────────┘
-            └────────────────────┼────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Amazon S3                                                        │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  LANDING ZONE   │──▶│   RAW ZONE      │──▶│  CURATED ZONE   │          │
-│  │  s3://landing/  │   │  s3://raw/      │   │  s3://curated/  │          │
-│  │  original files │   │  Parquet + Snappy│   │  clean Parquet  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Apache Spark on Amazon EMR                                    │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  EMR Cluster (auto-scaling)                                  │          │
-│  │  Landing → Raw : convert formats, apply partitioning         │          │
-│  │  Raw → Curated : deduplicate, type-cast, business rules      │          │
-│  │  Triggered by Airflow DAGs                                   │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Hive Metastore (on RDS MySQL)                                    │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Stores table definitions, partition metadata, S3 locations  │          │
-│  │  Compatible with Spark, Trino, EMR natively                  │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │ schema lookup → S3 location          │ schema lookup → S3 location
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  s3://raw/          │               │  s3://curated/                       │
-└──────────┬──────────┘               └──────────────┬───────────────────────┘
-           │                                         │
-           ▼                                         ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  SageMaker / Spark  │               │  Trino       → ad-hoc SQL            │
-│  (ML training)      │               │  Superset    → dashboards            │
-│                     │               │  Spark       → further processing    │
-└─────────────────────┘               └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[RDS / Aurora]
+        S2[SaaS APIs]
+        S3[Files]
+        S4[Kafka Topics]
+        S5[IoT / Events]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium\nCDC via WAL]
+        I2[Airbyte\nSaaS / Files]
+        I3[Kafka Connect\nS3 Sink]
+    end
+
+    subgraph STORAGE["Storage — Amazon S3"]
+        Z1[LANDING\ns3://landing/]
+        Z2[RAW\ns3://raw/\nParquet · Snappy]
+        Z3[CURATED\ns3://curated/\nclean Parquet]
+    end
+
+    subgraph PROC["Processing — Spark on EMR"]
+        P1[EMR Cluster\nLanding → Raw → Curated\nAirflow-triggered]
+    end
+
+    subgraph CATALOG["Catalog — Hive Metastore\non RDS MySQL"]
+        C1[Table definitions\npartition metadata\nS3 locations]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[SageMaker / Spark\nML training]
+        F2[Trino\nad-hoc SQL]
+        F3[Apache Superset\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    PROC --> Z2 & Z3
+    Z2 & Z3 -. register .-> C1
+    C1 --> F2 & F3
+    Z2 --> F1
 ```
 
 ---

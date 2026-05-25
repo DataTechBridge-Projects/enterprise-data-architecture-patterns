@@ -13,71 +13,44 @@ title: "3.7 — Data Lakehouse · Multi-Cloud Fully Managed"
 
 ## Architecture Overview
 
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources — Multi-Cloud + On-Prem"]
+        S1[AWS RDS / Aurora]
+        S2[Azure SQL / Cosmos DB]
+        S3[GCP Cloud SQL / Spanner]
+        S4[SaaS Apps\nSalesforce · SAP]
+        S5[Kafka / Event Hubs]
+    end
+
+    subgraph INGEST["Ingestion — Databricks Connectors"]
+        I1[Fivetran\n300+ SaaS connectors]
+        I2[Databricks Auto Loader\nfile ingest]
+        I3[Databricks Structured Streaming\nKafka / Event Hubs → Bronze]
+    end
+
+    subgraph STORAGE["Storage — S3 / ADLS / GCS · Delta Lake"]
+        Z1[BRONZE\ns3|abfss|gs://bronze/\nFivetran · Auto Loader · _delta_log]
+        Z2[SILVER\ns3|abfss|gs://silver/\nDLT MERGE · cleansed · deduped]
+        Z3[GOLD\ns3|abfss|gs://gold/\ndbt Cloud · Kimball · wide tables]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nDatabricks Unity Catalog — cross-cloud"]
+        C1[Unity Catalog\nsingle namespace\ncolumn masking · row filtering · ABAC]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Databricks SQL Warehouse\nserverless · cross-cloud]
+        F2[Tableau · Power BI DirectLake\nBI dashboards]
+        F3[Databricks ML Runtime\nSilver via Feature Store]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 --> F1 & F2
+    Z2 --> F3
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES  (multi-cloud, on-prem)                                       │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │AWS RDS / │  │Azure SQL │  │ GCP Cloud│  │ SaaS Apps│  │  Kafka / │    │
-│  │Aurora    │  │ / Cosmos │  │ SQL /    │  │(Salesforce│  │ Event    │    │
-│  │          │  │          │  │ Spanner  │  │ SAP etc) │  │ Hubs etc)│    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER  (cloud-agnostic via Databricks connectors)                │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Fivetran       │   │  Databricks     │   │  Databricks     │          │
-│  │  (300+ SaaS     │   │  Auto Loader    │   │  Structured     │          │
-│  │   connectors)   │   │  (file ingest)  │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Cloud Object Store  (Delta Lake table format)                    │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  Primary region (e.g. AWS S3)  ←  replicated to ADLS/GCS if needed  │  │
-│  │                                                                      │  │
-│  │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐               │  │
-│  │  │  BRONZE     │   │   SILVER    │   │   GOLD      │               │  │
-│  │  │  s3|abfss|  │──▶│  s3|abfss|  │──▶│  s3|abfss|  │               │  │
-│  │  │  gs://brnz/ │   │  gs://slvr/ │   │  gs://gold/ │               │  │
-│  │  │             │   │             │   │             │               │  │
-│  │  │ • Fivetran  │   │ • DLT MERGE │   │ • dbt Cloud │               │  │
-│  │  │ • Auto Ldr  │   │ • Cleansed  │   │ • Kimball   │               │  │
-│  │  │ • _delta_log│   │ • Deduped   │   │ • Wide Table│               │  │
-│  │  └─────────────┘   └─────────────┘   └─────────────┘               │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  Delta Lake: ACID · time travel · OPTIMIZE · VACUUM · schema evolution     │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (register)              ┆ (register)             ┆ (register)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Databricks Unity Catalog  (cross-cloud)             │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Single Unity Catalog namespace spans AWS + Azure + GCP workspaces         │
-│  Column masking · row filtering · ABAC via catalog tags                    │
-│  Databricks Lineage → auto-captured across all Spark + SQL jobs            │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ access check + schema resolution
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Databricks SQL  │   │ Tableau          │   │ Databricks ML Runtime        │
-│ Warehouse       │   │ (via JDBC to SQL │   │ (reads Silver via            │
-│ (serverless,    │   │  Warehouse)      │   │  Databricks Feature Store)   │
-│  cross-cloud)   │   │ Power BI         │   │                              │
-│                 │   │ (DirectLake)     │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
 ```
 
 ---

@@ -13,62 +13,47 @@ title: "2.6 — Data Lake · GCP OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
-│  │ Cloud SQL│  │ SaaS APIs│  │  Files   │  │  Kafka   │                  │
-│  │ / AlloyDB│  │          │  │  on GCS  │  │ on GKE   │                  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘                  │
-└───────┼─────────────┼─────────────┼──────────────┼──────────────────────┘
-        ▼             ▼             ▼              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION                                                                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Debezium       │  │  Airbyte        │  │  Kafka Connect  │            │
-│  │  (CDC → Kafka)  │  │  on GKE         │  │  GCS Sink       │            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-└───────────┼────────────────────┼────────────────────┼────────────────────┘
-            └────────────────────┼────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Google Cloud Storage (GCS)                                       │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  gs://landing/  │──▶│  gs://raw/      │──▶│  gs://curated/  │          │
-│  │  original files │   │  Parquet+Snappy │   │  clean Parquet  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Apache Spark on Dataproc                                      │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Dataproc (managed Hadoop/Spark clusters; auto-scaling)       │          │
-│  │  Landing → Raw  : convert, partition by date                 │          │
-│  │  Raw → Curated  : dedup, type-cast, business rules           │          │
-│  │  Dataproc Serverless for ad-hoc Spark workloads              │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Hive Metastore on Dataproc Metastore                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Dataproc Metastore (managed Hive Metastore service)         │          │
-│  │  Shared across Spark + Trino + Dataproc jobs                 │          │
-│  │  GCS locations registered as external tables                 │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │                                      │
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  gs://raw/          │               │  gs://curated/                       │
-└──────────┬──────────┘               └──────────────┬───────────────────────┘
-           ▼                                         ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  Spark / Vertex AI  │               │  Trino on GKE → ad-hoc SQL           │
-│  (ML training)      │               │  Superset     → dashboards           │
-└─────────────────────┘               └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Cloud SQL / AlloyDB]
+        S2[SaaS APIs]
+        S3[Files on GCS]
+        S4[Kafka on GKE]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium\nCDC → Kafka]
+        I2[Airbyte on GKE\nSaaS / Files]
+        I3[Kafka Connect\nGCS Sink]
+    end
+
+    subgraph STORAGE["Storage — Google Cloud Storage"]
+        Z1[LANDING\ngs://landing/]
+        Z2[RAW\ngs://raw/\nParquet · Snappy]
+        Z3[CURATED\ngs://curated/\nclean Parquet]
+    end
+
+    subgraph PROC["Processing — Spark on Dataproc"]
+        P1[Dataproc cluster\nLanding → Raw → Curated\nDataproc Serverless]
+    end
+
+    subgraph CATALOG["Catalog — Hive Metastore\nDataproc Metastore"]
+        C1[Table definitions\nGCS locations\nShared Spark + Trino]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Spark / Vertex AI\nML training]
+        F2[Trino on GKE\nad-hoc SQL]
+        F3[Apache Superset\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    PROC --> Z2 & Z3
+    Z2 & Z3 -. register .-> C1
+    Z2 --> F1
+    C1 --> F2 & F3
 ```
 
 ---

@@ -13,66 +13,50 @@ title: "2.5 — Data Lake · GCP Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Cloud SQL│  │ SaaS Apps│  │  Files   │  │ Pub/Sub  │  │  IoT     │   │
-│  │ / AlloyDB│  │(SFDC/SAP)│  │(GCS drops│  │ Topics   │  │  Core    │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION                                                                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Datastream     │  │  Cloud Data      │  │  Pub/Sub +      │            │
-│  │  (CDC → GCS)    │  │  Fusion / AIS    │  │  Dataflow       │            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-└───────────┼────────────────────┼────────────────────┼────────────────────┘
-            └────────────────────┼────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Google Cloud Storage (GCS)                                       │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  LANDING        │──▶│   RAW           │──▶│  CURATED        │          │
-│  │  gs://landing/  │   │  gs://raw/      │   │  gs://curated/  │          │
-│  │  original files │   │  Parquet+Snappy │   │  clean Parquet  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  IAM + VPC Service Controls · CMEK via Cloud KMS                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Cloud Dataflow (managed Apache Beam)                          │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Dataflow Jobs (auto-scaling, serverless)                     │          │
-│  │  Landing → Raw  : format conversion, partitioning            │          │
-│  │  Raw → Curated  : dedup, type-cast, conform                  │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Dataplex + Data Catalog                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Dataplex : manages lakes, zones, assets across GCS + BQ     │          │
-│  │  Data Catalog : asset discovery, schema, tags, lineage        │          │
-│  │  DLP API  : auto PII classification on GCS assets            │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │ schema + location                    │ schema + location
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  gs://raw/          │               │  gs://curated/                       │
-└──────────┬──────────┘               └──────────────┬───────────────────────┘
-           │                                         │
-           ▼                                         ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  Vertex AI          │               │  BigQuery External Tables → SQL      │
-│  (ML training)      │               │  Looker Studio    → dashboards       │
-│                     │               │  Looker           → semantic layer   │
-└─────────────────────┘               └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Cloud SQL / AlloyDB]
+        S2[SaaS Apps\nSalesforce · SAP]
+        S3[Files on GCS]
+        S4[Pub/Sub Topics]
+        S5[IoT Core]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Datastream\nCDC → GCS]
+        I2[Cloud Data Fusion / AIS\nSaaS / Files]
+        I3[Pub/Sub + Dataflow\nStreaming]
+    end
+
+    subgraph STORAGE["Storage — Google Cloud Storage"]
+        Z1[LANDING\ngs://landing/]
+        Z2[RAW\ngs://raw/\nParquet · Snappy]
+        Z3[CURATED\ngs://curated/\nclean Parquet]
+    end
+
+    subgraph PROC["Processing — Cloud Dataflow\nmanaged Apache Beam"]
+        P1[Dataflow Jobs\nauto-scaling · serverless\nLanding → Raw → Curated]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nDataplex + Data Catalog + DLP"]
+        C1[Dataplex\nlakes · zones · assets]
+        C2[Data Catalog\nschema · tags · lineage]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Vertex AI\nML training]
+        F2[BigQuery External Tables\nad-hoc SQL]
+        F3[Looker Studio\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    PROC --> Z2 & Z3
+    Z2 & Z3 -. auto-scan .-> C1
+    C1 --> C2
+    Z2 --> F1
+    C2 --> F2 & F3
 ```
 
 ---

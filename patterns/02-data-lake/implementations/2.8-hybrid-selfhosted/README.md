@@ -13,71 +13,53 @@ title: "2.8 — Data Lake · Hybrid Self-Hosted"
 
 ## Architecture Overview
 
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources — On-Prem"]
+        S1[Oracle DB]
+        S2[SQL Server]
+        S3[SAP ERP]
+        S4[Mainframe COBOL]
+        S5[Files / FTP]
+    end
+
+    subgraph INGEST["Ingestion — On-Prem"]
+        I1[Debezium\nCDC → Kafka]
+        I2[Apache Sqoop\nbulk extract]
+        I3[Custom ETL\nSAP / Mainframe]
+    end
+
+    subgraph STORAGE["On-Prem Storage — MinIO / HDFS"]
+        Z1[LANDING\n/landing/]
+        Z2[RAW\n/raw/\nParquet · Snappy]
+        Z3[CURATED\n/curated/\nclean Parquet]
+        Z4[Cloud Object Store\nS3 / ADLS / GCS\ncold archive]
+    end
+
+    subgraph PROC["Processing — Spark on YARN"]
+        P1[Spark on Hadoop YARN\nLanding → Raw → Curated]
+    end
+
+    subgraph CATALOG["Catalog & Security"]
+        C1[Apache Hive Metastore\ntable definitions · partitions]
+        C2[Apache Ranger\ncolumn/row security · LDAP]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Spark / MLflow\nML training]
+        F2[Trino / Presto\nad-hoc SQL]
+        F3[Apache Superset\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z3 -.->|lifecycle rule| Z4
+    PROC --> Z2 & Z3
+    Z2 & Z3 -. register .-> C1
+    C1 -. enforce .-> C2
+    Z2 --> F1
+    C2 --> F2 & F3
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES  (on-prem systems)                                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Oracle   │  │ SQL      │  │ SAP ERP  │  │Mainframe │  │  Files   │   │
-│  │ DB       │  │ Server   │  │          │  │ (COBOL)  │  │  / FTP   │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION (on-prem)                                                        │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Debezium       │  │  Apache Sqoop   │  │  Custom ETL     │            │
-│  │  (CDC → Kafka)  │  │  (bulk extract) │  │  (SAP/Mainframe)│            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-└───────────┼────────────────────┼────────────────────┼────────────────────┘
-            └────────────────────┼────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ON-PREM STORAGE — MinIO (S3-compatible) or HDFS                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  LANDING ZONE   │──▶│   RAW ZONE      │──▶│  CURATED ZONE   │          │
-│  │  /landing/      │   │  /raw/          │   │  /curated/      │          │
-│  │  original files │   │  Parquet+Snappy │   │  clean Parquet  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  MinIO: S3-compatible API · runs on bare metal / VMs                       │
-│  HDFS:  alternative for large Hadoop-native deployments                    │
-└─────────────────────────────────────────────────────────────────────────────┘
-                    │                              │
-          ──────────┤  CLOUD OFFLOAD (optional)   ├──────────
-          │         └─────────────┬────────────────┘         │
-          │                       ▼                          │
-          │         ┌─────────────────────────┐              │
-          │         │  Cloud Object Store     │              │
-          │         │  (S3 / ADLS / GCS)      │              │
-          │         │  Cold / Archive tier    │              │
-          │         └─────────────────────────┘              │
-          │                                                   │
-          ▼                                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Apache Spark (on-prem cluster or YARN)                        │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Spark on YARN (Hadoop cluster) or Spark Standalone          │          │
-│  │  Landing → Raw  : format conversion, partitioning            │          │
-│  │  Raw → Curated  : dedup, type-cast, business rules           │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & SECURITY                                                         │
-│  ┌──────────────────────────┐   ┌──────────────────────────┐              │
-│  │  Apache Hive Metastore   │   │  Apache Ranger           │              │
-│  │  table definitions       │   │  column/row security     │              │
-│  │  partition locations     │   │  audit logs              │              │
-│  │  compatible with Spark,  │   │  LDAP / AD integration   │              │
-│  │  Trino, Presto, Hive     │   │                          │              │
-│  └──────────────────────────┘   └──────────────────────────┘              │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │ schema + location                    │ schema + location
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  MinIO /raw/        │               │  MinIO /curated/                     │
 └──────────┬──────────┘               └──────────────┬───────────────────────┘
            ▼                                         ▼
 ┌─────────────────────┐               ┌──────────────────────────────────────┐

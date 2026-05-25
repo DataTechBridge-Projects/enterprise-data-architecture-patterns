@@ -13,66 +13,45 @@ title: "3.4 — Data Lakehouse · Azure OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │PostgreSQL│  │ SaaS APIs│  │  Files   │  │  Azure   │  │   IoT /  │    │
-│  │ / Azure  │  │ REST /   │  │(CSV/JSON │  │ Event    │  │  MQTT    │    │
-│  │ SQL DB   │  │ JDBC     │  │  Parquet)│  │  Hubs    │  │ → Hubs   │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Debezium       │   │  Apache Spark   │   │  Spark          │          │
-│  │  + Event Hubs   │   │  on HDInsight   │   │  Structured     │          │
-│  │  (CDC → Kafka)  │   │  (batch ingest) │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — ADLS Gen2  (Delta Lake table format)                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  abfss://bronze/│──▶│  abfss://silver/│──▶│  abfss://gold/  │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Raw Delta     │   │ • Spark MERGE   │   │ • dbt Core      │          │
-│  │ • APPEND write  │   │ • dbt Core      │   │ • Aggregates    │          │
-│  │ • _delta_log/   │   │ • Deduped       │   │ • Kimball/Wide  │          │
-│  │ • *.parquet     │   │ • Type-cast     │   │ • *.parquet     │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Delta Lake: ACID · schema enforce · time travel · OPTIMIZE / VACUUM       │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (register)              ┆ (register)             ┆ (register)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Hive Metastore on Azure SQL DB + Apache Atlas             │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Hive Metastore → Spark, Trino resolve Delta table schemas + locations     │
-│  Apache Atlas → data lineage · classification · governance policies        │
-│  Apache Ranger → fine-grained RBAC on Hive Metastore tables                │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ schema lookup + Ranger access check
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Trino on AKS    │   │ Apache Superset  │   │ Azure ML                     │
-│ (Delta connector│   │ (via Trino or    │   │ (reads Silver via            │
-│  sub-second SQL)│   │  Spark on Hive)  │   │  Spark on HDInsight)         │
-│                 │   │                  │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[PostgreSQL / Azure SQL DB]
+        S2[SaaS APIs\nREST / JDBC]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Azure Event Hubs]
+        S5[IoT / MQTT → Event Hubs]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium + Event Hubs\nCDC → Kafka]
+        I2[Spark on HDInsight\nbatch ingest]
+        I3[Spark Structured Streaming\nEvent Hubs → Bronze]
+    end
+
+    subgraph STORAGE["Storage — ADLS Gen2 · Delta Lake"]
+        Z1[BRONZE\nabfss://bronze/\nRaw Delta · APPEND]
+        Z2[SILVER\nabfss://silver/\nSpark MERGE · dbt Core]
+        Z3[GOLD\nabfss://gold/\ndbt Core · Kimball / wide]
+    end
+
+    subgraph CATALOG["Catalog\nHive Metastore on Azure SQL + Atlas + Ranger"]
+        C1[Hive Metastore\nDelta schemas + locations]
+        C2[Apache Ranger\nRBAC on metastore tables]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Trino on AKS\nDelta connector · sub-second SQL]
+        F2[Apache Superset\ndashboards via Trino]
+        F3[Azure ML\nSilver via Spark on HDInsight]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

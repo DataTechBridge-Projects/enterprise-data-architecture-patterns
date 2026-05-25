@@ -13,67 +13,47 @@ title: "3.9 — Data Lakehouse · Hybrid OSS Self-Hosted"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES  (on-prem + cloud)                                            │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │On-prem   │  │On-prem   │  │  Files / │  │  Apache  │  │  Cloud   │    │
-│  │Oracle /  │  │SAP ERP / │  │  NFS /   │  │  Kafka   │  │  SaaS    │    │
-│  │SQL Server│  │  SFTP    │  │  SMB     │  │ (on K8s) │  │  (REST)  │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER  (on-prem Kubernetes)                                      │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Debezium       │   │  Airbyte        │   │  Kafka Connect  │          │
-│  │  on K8s         │   │  on K8s         │   │  + Spark        │          │
-│  │  (CDC → Kafka)  │   │  (batch / SaaS) │   │  Structured     │          │
-│  │                 │   │                 │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — MinIO (on-prem S3-compatible) + Cloud spill (S3/ADLS/GCS)       │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  minio://bronze/│──▶│  minio://silver/│──▶│  minio://gold/  │          │
-│  │  (on-prem hot)  │   │  (on-prem hot)  │   │  (on-prem/cloud)│          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Iceberg ACID  │   │ • Spark MERGE   │   │ • dbt Core      │          │
-│  │ • metadata/     │   │ • dbt Core      │   │ • Aggregates    │          │
-│  │ • data/*.parquet│   │ • Deduped       │   │ • Kimball/Wide  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Tiering: Bronze → archive to cloud S3/ADLS/GCS after retention period    │
-│  MinIO erasure coding + replication across on-prem nodes                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (commit to Nessie)      ┆ (commit to Nessie)     ┆ (commit to Nessie)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Project Nessie on K8s + Apache Atlas + Apache Ranger             │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Nessie → versioned Iceberg catalog; prod / dev branch isolation            │
-│  Apache Atlas → data lineage · PII classification · governance policies    │
-│  Apache Ranger → column/row RBAC for Trino + Spark queries                 │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ versioned table lookup + Ranger access check
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Trino on K8s    │   │ Apache Superset  │   │ MLflow + Spark on K8s        │
-│ (Nessie + Icebg │   │ (on K8s)         │   │ (reads Silver from MinIO)    │
-│  connector)     │   │                  │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources — On-Prem + Cloud"]
+        S1[On-prem Oracle / SQL Server]
+        S2[SAP ERP / SFTP]
+        S3[Files / NFS / SMB]
+        S4[Apache Kafka on K8s]
+        S5[Cloud SaaS REST]
+    end
+
+    subgraph INGEST["Ingestion — On-Prem Kubernetes"]
+        I1[Debezium on K8s\nCDC → Kafka]
+        I2[Airbyte on K8s\nbatch / SaaS]
+        I3[Kafka Connect + Spark Streaming\nKafka → Bronze]
+    end
+
+    subgraph STORAGE["Storage — MinIO on-prem + Cloud Spill"]
+        Z1[BRONZE\nminio://bronze/\non-prem hot · Iceberg ACID]
+        Z2[SILVER\nminio://silver/\nSpark MERGE · dbt Core]
+        Z3[GOLD\nminio://gold/\ndbt Core · Kimball / wide]
+        Z4[Cloud Archive\nS3 / ADLS / GCS\naged-out Bronze]
+    end
+
+    subgraph CATALOG["Catalog\nNessie on K8s + Apache Atlas + Ranger"]
+        C1[Project Nessie on K8s\nversioned Iceberg · prod/dev branches]
+        C2[Apache Ranger\ncolumn/row RBAC]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Trino on K8s\nNessie + Iceberg connector]
+        F2[Apache Superset on K8s\ndashboards]
+        F3[MLflow + Spark on K8s\nSilver from MinIO]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 -.->|lifecycle rule| Z4
+    Z1 & Z2 & Z3 -. commit to Nessie .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

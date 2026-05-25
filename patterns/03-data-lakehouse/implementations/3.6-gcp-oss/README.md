@@ -13,66 +13,45 @@ title: "3.6 — Data Lakehouse · GCP OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │PostgreSQL│  │ SaaS APIs│  │  Files   │  │  Pub/Sub │  │   IoT    │    │
-│  │ / Cloud  │  │ REST /   │  │(CSV/JSON │  │  Topics  │  │  Core    │    │
-│  │ SQL      │  │ JDBC     │  │  Parquet)│  │          │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Debezium       │   │  Apache Spark   │   │  Spark          │          │
-│  │  + Pub/Sub      │   │  on Dataproc    │   │  Structured     │          │
-│  │  (CDC → Kafka)  │   │  (batch ingest) │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Google Cloud Storage  (Apache Iceberg table format)              │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  gs://bronze/   │──▶│  gs://silver/   │──▶│  gs://gold/     │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Raw Iceberg   │   │ • Spark MERGE   │   │ • dbt Core      │          │
-│  │ • APPEND write  │   │ • dbt Core      │   │ • Aggregates    │          │
-│  │ • metadata/     │   │ • Deduped       │   │ • Kimball/Wide  │          │
-│  │ • data/*.parquet│   │ • Type-cast     │   │ • data/*.parquet│          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Iceberg V2: row-level deletes · partition evolution · snapshot isolation  │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (commit snapshot)       ┆ (commit snapshot)      ┆ (commit snapshot)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Hive Metastore on Dataproc + Apache Atlas (on GKE)               │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Hive Metastore → Spark, Trino resolve Iceberg table schemas + locations   │
-│  Apache Atlas → data lineage · PII classification · governance policies    │
-│  Apache Ranger (on GKE) → fine-grained RBAC on metastore tables            │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ schema lookup + Ranger access check
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Trino on GKE    │   │ Apache Superset  │   │ Vertex AI                    │
-│ (Iceberg connect│   │ (connects via    │   │ (reads Silver via            │
-│  sub-second SQL)│   │  Trino)          │   │  Spark on Dataproc)          │
-│                 │   │                  │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[PostgreSQL / Cloud SQL]
+        S2[SaaS APIs\nREST / JDBC]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Pub/Sub Topics]
+        S5[IoT Core]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium + Pub/Sub\nCDC → Kafka]
+        I2[Spark on Dataproc\nbatch ingest]
+        I3[Spark Structured Streaming\nPub/Sub → Bronze]
+    end
+
+    subgraph STORAGE["Storage — GCS · Apache Iceberg V2"]
+        Z1[BRONZE\ngs://bronze/\nRaw Iceberg · APPEND]
+        Z2[SILVER\ngs://silver/\nSpark MERGE · dbt Core]
+        Z3[GOLD\ngs://gold/\ndbt Core · Kimball / wide]
+    end
+
+    subgraph CATALOG["Catalog\nHive Metastore on Dataproc + Atlas + Ranger"]
+        C1[Hive Metastore\nIceberg schemas + locations]
+        C2[Apache Ranger on GKE\nfine-grained RBAC]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Trino on GKE\nIceberg connector · sub-second SQL]
+        F2[Apache Superset\ndashboards via Trino]
+        F3[Vertex AI\nSilver via Spark on Dataproc]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. commit snapshot .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

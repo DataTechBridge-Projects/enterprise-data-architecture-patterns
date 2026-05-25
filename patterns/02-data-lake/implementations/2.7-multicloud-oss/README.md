@@ -13,67 +13,48 @@ title: "2.7 — Data Lake · Multi-Cloud OSS Portable"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES  (any cloud or on-prem)                                       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ AWS RDS  │  │ Azure SQL│  │ GCP Cloud│  │  SaaS    │  │ On-prem  │   │
-│  │          │  │          │  │ SQL      │  │  APIs    │  │  DBs     │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION — Airbyte + Debezium + Kafka                                     │
-│  ┌───────────────────────────────────────────────────────┐                 │
-│  │  Airbyte (centralised connector hub — cloud-agnostic) │                 │
-│  │  Debezium (CDC from any RDBMS → Kafka)                │                 │
-│  │  Kafka Connect (any cloud object store sink)          │                 │
-│  └───────────────────────────────────────────────────────┘                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          ▼                      ▼                      ▼
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│  AWS S3          │  │  Azure ADLS Gen2 │  │  GCP GCS         │
-│  LANDING / RAW   │  │  LANDING / RAW   │  │  LANDING / RAW   │
-│  / CURATED       │  │  / CURATED       │  │  / CURATED       │
-└────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘
-         └───────────────────┬─┘                      │
-                              └──────────────────┬─────┘
-                                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Apache Spark on Kubernetes (cloud-agnostic)                   │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Spark Operator on K8s — runs on any cloud                   │          │
-│  │  Reads from and writes to any object store via Hadoop S3A     │          │
-│  │  Landing → Raw → Curated per source cloud                    │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Atlas (on K8s)                                            │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Single unified catalog across all clouds                    │          │
-│  │  Registers tables from S3, ADLS, GCS — all in one place      │          │
-│  │  Lineage graph · data classification · business glossary      │          │
-│  │  Apache Ranger for policy enforcement                         │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                    │ table locations → object stores
-                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMPTION — Trino (federated query across all clouds)                    │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Trino Connectors:                                           │          │
-│  │  • Hive connector  → S3 + ADLS + GCS (via catalog)          │          │
-│  │  • Iceberg connector → open table format (optional)          │          │
-│  │  • RDBMS connectors → query operational DBs directly         │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-│                                                                             │
-│  Trino → Superset (dashboards) · Jupyter (exploration)                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources — any cloud or on-prem"]
+        S1[AWS RDS]
+        S2[Azure SQL]
+        S3[GCP Cloud SQL]
+        S4[SaaS APIs]
+        S5[On-prem DBs]
+    end
+
+    subgraph INGEST["Ingestion — Airbyte + Debezium + Kafka"]
+        I1[Airbyte\ncentralised connector hub]
+        I2[Debezium\nCDC → Kafka]
+        I3[Kafka Connect\nany object store sink]
+    end
+
+    subgraph STORAGE["Storage — Cloud Object Stores"]
+        Z1[AWS S3\nLanding · Raw · Curated]
+        Z2[Azure ADLS Gen2\nLanding · Raw · Curated]
+        Z3[GCP GCS\nLanding · Raw · Curated]
+    end
+
+    subgraph PROC["Processing — Spark on Kubernetes"]
+        P1[Spark Operator on K8s\ncloud-agnostic · Hadoop S3A\nLanding → Raw → Curated]
+    end
+
+    subgraph CATALOG["Catalog — Apache Atlas on K8s\n+ Apache Ranger"]
+        C1[Unified catalog\nS3 + ADLS + GCS tables\nlineage · classification]
+    end
+
+    subgraph CONSUME["Consumption — Trino (federated)"]
+        F1[Trino\nHive + Iceberg connectors\ncross-cloud SQL]
+        F2[Apache Superset\ndashboards]
+        F3[Jupyter\nexploration]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 & Z2 & Z3
+    PROC --> Z1 & Z2 & Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 --> F1
+    F1 --> F2 & F3
 ```
 
 ---

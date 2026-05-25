@@ -13,60 +13,47 @@ title: "2.4 — Data Lake · Azure OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
-│  │ Azure SQL│  │ SaaS APIs│  │  Files   │  │  Kafka   │                  │
-│  │ / Postgres│  │          │  │          │  │ on AKS   │                  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘                  │
-└───────┼─────────────┼─────────────┼──────────────┼──────────────────────┘
-        ▼             ▼             ▼              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION                                                                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Debezium       │  │  Airbyte        │  │  Kafka Connect  │            │
-│  │  (CDC → Kafka)  │  │  (SaaS / Files) │  │  ADLS Sink      │            │
-│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘            │
-└───────────┼────────────────────┼────────────────────┼────────────────────┘
-            └────────────────────┼────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — ADLS Gen2                                                        │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  LANDING        │──▶│   RAW           │──▶│  CURATED        │          │
-│  │  /landing/      │   │  /raw/          │   │  /curated/      │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — Apache Spark on AKS                                           │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Spark Operator on Kubernetes                                │          │
-│  │  Landing → Raw : format conversion, partitioning             │          │
-│  │  Raw → Curated : dedup, type casting, business rules         │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Atlas (on AKS)                                            │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Hive-compatible metastore · lineage graph · classifications  │          │
-│  │  Ranger integration for access policy enforcement             │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │                                      │
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  ADLS /raw/         │               │  ADLS /curated/                      │
-└──────────┬──────────┘               └──────────────┬───────────────────────┘
-           ▼                                         ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  Spark / Azure ML   │               │  Trino       → ad-hoc SQL            │
-│  (ML training)      │               │  Superset    → dashboards            │
-└─────────────────────┘               └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Azure SQL / Postgres]
+        S2[SaaS APIs]
+        S3[Files]
+        S4[Kafka on AKS]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium\nCDC → Kafka]
+        I2[Airbyte\nSaaS / Files]
+        I3[Kafka Connect\nADLS Sink]
+    end
+
+    subgraph STORAGE["Storage — ADLS Gen2"]
+        Z1[LANDING\n/landing/]
+        Z2[RAW\n/raw/\nParquet · Snappy]
+        Z3[CURATED\n/curated/]
+    end
+
+    subgraph PROC["Processing — Spark on AKS"]
+        P1[Spark Operator on K8s\nLanding → Raw → Curated]
+    end
+
+    subgraph CATALOG["Catalog — Apache Atlas on AKS"]
+        C1[Hive metastore · lineage\nRanger access policies]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Spark / Azure ML\nML training]
+        F2[Trino\nad-hoc SQL]
+        F3[Apache Superset\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    PROC --> Z2 & Z3
+    Z2 & Z3 -. register .-> C1
+    Z2 --> F1
+    C1 --> F2 & F3
 ```
 
 ---

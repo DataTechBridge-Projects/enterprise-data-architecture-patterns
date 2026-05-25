@@ -13,66 +13,45 @@ title: "3.8 — Data Lakehouse · Multi-Cloud OSS Portable"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES  (any cloud, on-prem)                                         │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │AWS RDS / │  │Azure SQL │  │ GCP SQL  │  │ SaaS APIs│  │  Apache  │    │
-│  │PostgreSQL│  │ / ADLS   │  │ / Spanner│  │ REST /   │  │  Kafka   │    │
-│  │          │  │          │  │          │  │ JDBC     │  │ (any)    │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER  (portable OSS)                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Debezium       │   │  Airbyte        │   │  Kafka Connect  │          │
-│  │  (CDC → Kafka)  │   │  (SaaS / batch  │   │  + Spark        │          │
-│  │                 │   │   → Iceberg)    │   │  Structured     │          │
-│  │                 │   │                 │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Cloud Object Store  (Apache Iceberg · cloud-agnostic)            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  s3|abfss|gs:// │──▶│  s3|abfss|gs:// │──▶│  s3|abfss|gs:// │          │
-│  │  bronze/        │   │  silver/        │   │  gold/          │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Iceberg ACID  │   │ • Spark MERGE   │   │ • dbt Core      │          │
-│  │ • metadata/     │   │ • dbt Core      │   │ • Aggregates    │          │
-│  │ • data/*.parquet│   │ • data/*.parquet│   │ • Kimball/Wide  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Iceberg V2 + Nessie: ACID · branching · tag-based time travel             │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (commit to Nessie)      ┆ (commit to Nessie)     ┆ (commit to Nessie)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Project Nessie (Git-like catalog) + Apache Atlas                 │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Nessie → versioned Iceberg catalog; branches for dev/prod isolation       │
-│  Apache Atlas → lineage · PII classification · governance policies         │
-│  Apache Ranger → column/row RBAC enforced at Trino + Spark query time      │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ versioned table lookup + Ranger access check
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Trino           │   │ Apache Superset  │   │ MLflow + custom              │
-│ (Nessie + Icebg │   │ (via Trino)      │   │ training pipelines           │
-│  connector)     │   │                  │   │ (Spark reads Silver)         │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources — Any Cloud or On-Prem"]
+        S1[AWS RDS / PostgreSQL]
+        S2[Azure SQL / ADLS]
+        S3[GCP SQL / Spanner]
+        S4[SaaS APIs\nREST / JDBC]
+        S5[Apache Kafka\nany cloud]
+    end
+
+    subgraph INGEST["Ingestion — Portable OSS"]
+        I1[Debezium\nCDC → Kafka]
+        I2[Airbyte\nSaaS / batch → Iceberg]
+        I3[Kafka Connect + Spark Streaming\nKafka → Bronze]
+    end
+
+    subgraph STORAGE["Storage — S3 / ADLS / GCS · Apache Iceberg V2 + Nessie"]
+        Z1[BRONZE\ns3|abfss|gs://bronze/\nIceberg ACID]
+        Z2[SILVER\ns3|abfss|gs://silver/\nSpark MERGE · dbt Core]
+        Z3[GOLD\ns3|abfss|gs://gold/\ndbt Core · Kimball / wide]
+    end
+
+    subgraph CATALOG["Catalog\nProject Nessie + Apache Atlas + Ranger"]
+        C1[Project Nessie\nversioned Iceberg · dev/prod branches]
+        C2[Apache Ranger\ncolumn/row RBAC at query time]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Trino\nNessie + Iceberg connector]
+        F2[Apache Superset\ndashboards via Trino]
+        F3[MLflow + Spark\ncustom training pipelines]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. commit to Nessie .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

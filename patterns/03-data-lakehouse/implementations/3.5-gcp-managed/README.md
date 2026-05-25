@@ -13,67 +13,47 @@ title: "3.5 — Data Lakehouse · GCP Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │Cloud SQL │  │ SaaS Apps│  │  Files   │  │  Pub/Sub │  │   IoT    │    │
-│  │ / Spanner│  │(Salesforce│  │(CSV/JSON │  │  Topics  │  │  Core    │    │
-│  │          │  │ SAP etc) │  │  Parquet)│  │          │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Datastream     │   │  Cloud Data     │   │  Dataflow       │          │
-│  │  (CDC → GCS /   │   │  Fusion         │   │  (Apache Beam)  │          │
-│  │   BigQuery)     │   │  (SaaS / Files) │   │  Pub/Sub→Iceberg│          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — GCS  (Apache Iceberg table format via BigLake)                   │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  gs://bronze/   │──▶│  gs://silver/   │──▶│  gs://gold/     │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Raw Iceberg   │   │ • Dataform      │   │ • Dataform      │          │
-│  │ • Dataflow write│   │ • MERGE dedup   │   │ • MERGE dims    │          │
-│  │ • metadata/     │   │ • Type-cast     │   │ • Kimball/Wide  │          │
-│  │ • data/*.parquet│   │ • data/*.parquet│   │ • data/*.parquet│          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  BigLake: unified access API for GCS Iceberg tables via BigQuery engine    │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (register)              ┆ (register)             ┆ (register)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Dataplex + BigQuery Catalog + Cloud DLP             │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Dataplex → zone management · data quality · auto-discovery                │
-│  BigQuery Catalog → external Iceberg table registration via BigLake        │
-│  Cloud DLP → PII detection + de-identification on Bronze                   │
-│  IAM Conditions → column / row level (BigQuery policy tags)                │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ schema lookup + policy tag enforcement
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Ad-hoc SQL    │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ BigQuery        │   │ Looker           │   │ Vertex AI                    │
-│ (external tables│   │ (LookML on BQ    │   │ (reads Silver via            │
-│  on Iceberg GCS)│   │  Gold models)    │   │  BigQuery or GCS direct)     │
-│                 │   │                  │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Cloud SQL / Spanner]
+        S2[SaaS Apps\nSalesforce · SAP]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Pub/Sub Topics]
+        S5[IoT Core]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Datastream\nCDC → GCS / BigQuery]
+        I2[Cloud Data Fusion\nSaaS / Files]
+        I3[Dataflow\nPub/Sub → Iceberg]
+    end
+
+    subgraph STORAGE["Storage — GCS · Apache Iceberg · BigLake"]
+        Z1[BRONZE\ngs://bronze/\nRaw Iceberg · Dataflow write]
+        Z2[SILVER\ngs://silver/\nDataform MERGE dedup]
+        Z3[GOLD\ngs://gold/\nDataform MERGE dims · Kimball]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nDataplex + BigQuery Catalog + Cloud DLP"]
+        C1[Dataplex\nzone mgmt · data quality]
+        C2[BigQuery Catalog\nBigLake external Iceberg tables]
+        C3[Cloud DLP\nPII detection · policy tags]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[BigQuery\nexternal Iceberg tables]
+        F2[Looker\nLookML · Gold models]
+        F3[Vertex AI\nSilver via BigQuery or GCS]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. register .-> C1
+    C1 --> C2
+    C2 -. scan .-> C3
+    C2 --> F1 & F2
+    Z2 --> F3
 ```
 
 ---

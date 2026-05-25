@@ -13,16 +13,50 @@ title: "2.1 — Data Lake · AWS Fully Managed"
 
 ## Architecture Overview
 
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[RDS / Aurora]
+        S2[SaaS Apps\nSalesforce · SAP]
+        S3[Files\nCSV · JSON · XML]
+        S4[Clickstream / Logs]
+        S5[IoT / Events]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[AWS DMS\nDB → S3 CDC]
+        I2[AWS Glue ETL\nSaaS / Files]
+        I3[Kinesis Firehose\nStreaming]
+    end
+
+    subgraph STORAGE["Storage — Amazon S3"]
+        Z1[LANDING\ns3://landing/\nExact copy · short TTL]
+        Z2[RAW\ns3://raw/\nParquet · partitioned]
+        Z3[CURATED\ns3://curated/\nCleaned · business-ready]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nGlue Data Catalog + Lake Formation"]
+        C1[Glue Crawler\nauto-discovers schema]
+        C2[Lake Formation\ncolumn/row security]
+        C3[AWS Macie\nPII detection]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[SageMaker\nML training]
+        F2[Amazon Athena\nad-hoc SQL]
+        F3[Redshift Spectrum\nBI / complex SQL]
+        F4[QuickSight\ndashboards]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z2 & Z3 -. register .-> C1
+    C1 -. enforce .-> C2
+    Z2 --> F1
+    C2 --> F2
+    C2 --> F3
+    C2 --> F4
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │ RDS /    │  │ SaaS Apps│  │  Files   │  │Clickstream│  │   IoT /  │    │
-│  │ Aurora   │  │(Salesforce│  │(CSV/JSON │  │  / Logs  │  │  Events  │    │
-│  │          │  │ SAP etc) │  │  /XML)   │  │          │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
         │             │             │              │             │
         ▼             ▼             ▼              ▼             ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐

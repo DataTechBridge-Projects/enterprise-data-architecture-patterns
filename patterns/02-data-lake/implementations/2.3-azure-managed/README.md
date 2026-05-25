@@ -13,69 +13,45 @@ title: "2.3 — Data Lake · Azure Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Azure SQL│  │ SaaS Apps│  │  Files   │  │ Event    │  │   IoT    │   │
-│  │ SQL Server│  │(D365/SFDC│  │(Blob/FTP)│  │ Hubs     │  │   Hub    │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION — Azure Data Factory (ADF)                                       │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐         │
-│  │  ADF Copy        │  │  ADF Mapping     │  │  Event Hubs      │         │
-│  │  Activity        │  │  Data Flows      │  │  Capture         │         │
-│  │  (DB / Files)    │  │  (SaaS APIs)     │  │  (→ ADLS auto)   │         │
-│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘         │
-└───────────┼────────────────────┼────────────────────────┼──────────────────┘
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Azure Data Lake Storage Gen2 (ADLS)                              │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  LANDING        │──▶│   RAW           │──▶│  CURATED        │          │
-│  │  /landing/      │   │  /raw/          │   │  /curated/      │          │
-│  │  original files │   │  Parquet+Snappy │   │  clean Parquet  │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Hierarchical Namespace enabled · RBAC + ACLs per folder                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  PROCESSING — ADF Data Flows / Synapse Pipelines / Databricks (optional)    │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  ADF Mapping Data Flows (Spark-based, serverless)            │          │
-│  │  Landing → Raw : convert, partition by date                  │          │
-│  │  Raw → Curated : deduplicate, type-cast, conform             │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Microsoft Purview                                   │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Auto-scan ADLS → registers assets, schema, lineage          │          │
-│  │  Data classification → PII / PHI / PCI tagging (built-in)   │          │
-│  │  Business glossary · data owners · access policies           │          │
-│  │  Lineage from ADF pipelines auto-captured                    │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-           │ schema + location                    │ schema + location
-           ▼                                      ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  ADLS /raw/         │               │  ADLS /curated/                      │
-└──────────┬──────────┘               └──────────────┬───────────────────────┘
-           │                                         │
-           ▼                                         ▼
-┌─────────────────────┐               ┌──────────────────────────────────────┐
-│  Azure ML           │               │  Synapse Serverless SQL → ad-hoc     │
-│  (training datasets)│               │  Power BI         → dashboards       │
-│                     │               │  Azure Databricks → advanced analytics│
-└─────────────────────┘               └──────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[Azure SQL / SQL Server]
+        S2[SaaS Apps\nD365 · Salesforce]
+        S3[Files\nBlob / FTP]
+        S4[Event Hubs]
+        S5[IoT Hub]
+    end
+
+    subgraph INGEST["Ingestion — Azure Data Factory"]
+        I1[ADF Copy Activity\nDB / Files]
+        I2[ADF Mapping Data Flows\nSaaS APIs]
+        I3[Event Hubs Capture\n→ ADLS auto]
+    end
+
+    subgraph STORAGE["Storage — ADLS Gen2"]
+        Z1[LANDING\n/landing/]
+        Z2[RAW\n/raw/\nParquet · Snappy]
+        Z3[CURATED\n/curated/\nclean Parquet]
+    end
+
+    subgraph CATALOG["Catalog & Governance\nMicrosoft Purview"]
+        C1[Auto-scan ADLS\nschema · lineage]
+        C2[PII / PHI / PCI tagging\nbusiness glossary]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Azure ML\ntraining datasets]
+        F2[Synapse Serverless SQL\nad-hoc queries]
+        F3[Power BI\ndashboards]
+        F4[Azure Databricks\nadvanced analytics]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z2 & Z3 -. auto-scan .-> C1
+    Z2 --> F1
+    C1 --> F2 & F3 & F4
 ```
 
 ---

@@ -13,67 +13,46 @@ title: "2.2 — Data Lakehouse · AWS OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCES                                                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │PostgreSQL│  │ SaaS APIs│  │  Files   │  │  Apache  │  │   IoT /  │    │
-│  │ MySQL /  │  │ REST /   │  │(CSV/JSON │  │  Kafka   │  │  Events  │    │
-│  │ MongoDB  │  │ JDBC     │  │  Parquet)│  │  (MSK)   │  │  (MSK)   │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  INGESTION LAYER                                                            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Debezium       │   │  Apache Spark   │   │  Spark          │          │
-│  │  on MSK Connect │   │  on EMR         │   │  Structured     │          │
-│  │  (CDC → Kafka)  │   │  (batch ingest) │   │  Streaming      │          │
-│  └────────┬────────┘   └────────┬────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼─────────────────────┼────────────────────┘
-            └────────────────────┼─────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STORAGE — Amazon S3  (Apache Iceberg table format)                         │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  BRONZE         │   │   SILVER        │   │   GOLD          │          │
-│  │  s3://bronze/   │──▶│  s3://silver/   │──▶│  s3://gold/     │          │
-│  │                 │   │                 │   │                 │          │
-│  │ • Raw Iceberg   │   │ • dbt Core      │   │ • dbt Core      │          │
-│  │ • Spark APPEND  │   │ • Spark MERGE   │   │ • Spark MERGE   │          │
-│  │ • metadata/     │   │ • Deduped       │   │ • Kimball/wide  │          │
-│  │ • data/*.parquet│   │ • Type-cast     │   │ • BI-ready      │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-│                                                                             │
-│  Iceberg V2: row-level deletes · partition evolution · snapshot isolation  │
-└─────────────────────────────────────────────────────────────────────────────┘
-        ┆ (commit snapshot)       ┆ (commit snapshot)      ┆ (commit snapshot)
-        ▼                         ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — AWS Glue Data Catalog (Iceberg REST) + Lake Formation            │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-│  Iceberg REST catalog → Spark, Trino resolve table metadata + snapshots    │
-│  Glue Data Catalog → persists Iceberg table metadata, schemas, locations   │
-│  Lake Formation → fine-grained column/row access per IAM role              │
-│  ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄ ┄   │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │ snapshot resolution + access check
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐   ┌──────────────────┐   ┌──────────────────────────────┐
-│ CONSUMPTION     │   │ CONSUMPTION      │   │ CONSUMPTION                  │
-│ — Interactive   │   │ — BI / Reporting │   │ — ML / Science               │
-│                 │   │                  │   │                              │
-│ Trino on EMR    │   │ Amazon Athena v3 │   │ SageMaker                    │
-│ (low-latency    │   │ (serverless SQL  │   │ (EMR Spark reads Silver      │
-│  SQL on Iceberg)│   │  on Gold)        │   │  Iceberg for training)       │
-│                 │   │ Apache Superset  │   │                              │
-│                 │   │ (dashboards)     │   │                              │
-└─────────────────┘   └──────────────────┘   └──────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Data Sources"]
+        S1[PostgreSQL · MySQL · MongoDB]
+        S2[SaaS APIs\nREST / JDBC]
+        S3[Files\nCSV · JSON · Parquet]
+        S4[Apache Kafka on MSK]
+        S5[IoT / Events on MSK]
+    end
+
+    subgraph INGEST["Ingestion Layer"]
+        I1[Debezium on MSK Connect\nCDC → Kafka]
+        I2[Spark on EMR\nbatch ingest]
+        I3[Spark Structured Streaming\nKafka → Bronze]
+    end
+
+    subgraph STORAGE["Storage — S3 · Apache Iceberg V2"]
+        Z1[BRONZE\ns3://bronze/\nSpark APPEND · ACID]
+        Z2[SILVER\ns3://silver/\ndbt Core · Spark MERGE]
+        Z3[GOLD\ns3://gold/\ndbt Core · Kimball / wide]
+    end
+
+    subgraph CATALOG["Catalog\nGlue Data Catalog Iceberg REST + Lake Formation"]
+        C1[Iceberg REST catalog\nsnapshot resolution]
+        C2[Lake Formation\ncolumn/row access per IAM role]
+    end
+
+    subgraph CONSUME["Consumption"]
+        F1[Trino on EMR\nlow-latency Iceberg SQL]
+        F2[Amazon Athena v3\nserverless SQL · Gold]
+        F3[Apache Superset\ndashboards]
+        F4[SageMaker\nML training · Silver]
+    end
+
+    SRC --> INGEST
+    INGEST --> Z1 --> Z2 --> Z3
+    Z1 & Z2 & Z3 -. commit snapshot .-> C1
+    C1 -. enforce .-> C2
+    C2 --> F1 & F2 & F3
+    Z2 --> F4
 ```
 
 ---
