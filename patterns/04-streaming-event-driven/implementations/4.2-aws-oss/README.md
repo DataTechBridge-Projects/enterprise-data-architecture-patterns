@@ -13,80 +13,53 @@ title: "4.2 — Streaming / Event-Driven · AWS OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Sensor  │  │  ices    │  │(Debezium)│    │
-│  │  stream  │  │  Events  │  │  Telemetry│  │  Events  │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Apache Kafka on Amazon MSK                                  │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  MSK cluster (3-broker, multi-AZ)                            │          │
-│  │                                                              │          │
-│  │  Topics (partitioned by entity_id):                          │          │
-│  │  • clickstream.raw          • orders.events                  │          │
-│  │  • iot.telemetry            • cdc.{db}.{table}               │          │
-│  │                                                              │          │
-│  │  Confluent Schema Registry (self-managed on EC2)             │          │
-│  │  → Avro schema per topic · evolution policies                │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Apache Flink on Amazon EMR                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Pattern  │          │
-│  │  (Flink Async   │   │  Aggregations    │   │  Detection      │          │
-│  │   I/O → Cassand-│   │  (tumbling/      │   │  (Flink CEP     │          │
-│  │   ra lookup)    │   │   sliding/       │   │   fraud rules)  │          │
-│  │                 │   │   session)       │   │                 │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM STORE      │   │  COLD STORE     │          │
-│  │  Apache         │   │  Trino on EMR    │──▶│  Apache Iceberg │          │
-│  │  Cassandra      │   │  (query engine   │   │  on S3          │          │
-│  │  (EC2/EKS)      │   │   over Iceberg)  │   │                 │          │
-│  │                 │   │                  │   │ • ACID tables   │          │
-│  │ • <5ms reads    │   │ • SQL on Iceberg  │   │ • Time travel   │          │
-│  │ • Wide rows     │   │ • BI / ad-hoc    │   │ • Flink direct  │          │
-│  │ • TTL native    │   │                  │   │   write         │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Hive Metastore / AWS Glue Data Catalog                    │
-│  · Iceberg tables registered for Trino and Flink SQL access                 │
-│  · Schema Registry enforces Avro/Protobuf on Kafka topics                  │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  ML / Training  │            │
-│  │  APIs           │  │  Apache Superset │  │  Spark on EMR   │            │
-│  │  (Cassandra)    │  │  (Trino backend) │  │  (S3 Iceberg)   │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[Mobile App Events]
+        S3[IoT / Sensors]
+        S4[Microservices]
+        S5[DB CDC · Debezium]
+    end
+
+    subgraph BROKER["Event Broker — Apache Kafka on MSK"]
+        B1[Kafka Topics · MSK 3-broker multi-AZ\npartitioned by entity_id]
+        B2[Confluent Schema Registry · EC2\nAvro · BACKWARD compatibility]
+    end
+
+    subgraph PROC["Stream Processing — Apache Flink on EMR"]
+        P1[Enrichment\nAsync I/O Cassandra lookup]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[CEP Fraud Detection\nFlink CEP library]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Apache Cassandra · EC2/EKS\nHot · <5ms · TTL)]
+        D2[Apache Iceberg on S3\nCold · ACID · time-travel]
+    end
+
+    subgraph CATALOG["Catalog"]
+        C1[Hive Metastore · RDS MySQL\nIceberg + Spark + Trino compatible]
+        C2[Trino on EMR\nSQL federation over Iceberg]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[REST APIs\nCassandra reads]
+        F2[Apache Superset\nTrino dashboards]
+        F3[Spark on EMR\nML training]
+        F4[Flink SQL\nstream-table joins]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    D2 -. register tables .-> C1
+    C1 --> C2
+    D1 --> F1
+    C2 --> F2
+    D2 --> F3
+    BROKER --> F4
 ```
 
 ---

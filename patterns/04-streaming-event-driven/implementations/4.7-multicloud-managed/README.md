@@ -13,86 +13,53 @@ title: "4.7 — Streaming / Event-Driven · Multi-Cloud Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES  (any cloud or on-prem)                                      │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Edge    │  │  ices    │  │(Debezium/│    │
-│  │  stream  │  │  Events  │  │  Devices │  │  Events  │  │ Kafka    │    │
-│  │          │  │          │  │          │  │          │  │  Connect)│    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Confluent Cloud (Kafka)                                     │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Confluent Cloud Cluster (Dedicated or Standard)             │          │
-│  │  Runs on AWS / Azure / GCP — choose per region               │          │
-│  │                                                              │          │
-│  │  Topics (partitioned by entity_id):                          │          │
-│  │  • clickstream.raw          • iot.telemetry                  │          │
-│  │  • orders.events            • cdc.{db}.{table}               │          │
-│  │  • alerts.output            • dlq.{topic}                    │          │
-│  │                                                              │          │
-│  │  Confluent Schema Registry → Avro / Protobuf / JSON Schema   │          │
-│  │  Confluent ksqlDB          → lightweight stateful queries    │          │
-│  │  Kafka Connect (managed)   → source + sink connectors        │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Confluent Cloud for Apache Flink                       │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Fraud    │          │
-│  │  (Flink Table   │   │  Aggregations    │   │  Pattern        │          │
-│  │   API joins     │   │  TUMBLE/HOP/     │   │  Detection      │          │
-│  │   to lookup     │   │  CUMULATE/       │   │  (Flink CEP     │          │
-│  │   tables)       │   │  SESSION windows │   │   + ksqlDB)     │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM / COLD     │   │  COLD ARCHIVE   │          │
-│  │  MongoDB Atlas  │   │  Snowflake       │──▶│  Snowflake      │          │
-│  │  (or DynamoDB / │   │  (Snowpipe       │   │  Dynamic Tables │          │
-│  │  Cosmos DB)     │   │   Streaming      │   │  + Time Travel  │          │
-│  │                 │   │   <1s latency)   │   │  90-day travel  │          │
-│  │ • <10ms reads   │   │ • SQL analytics  │   │                 │          │
-│  │ • Global        │   │ • BI / ad-hoc    │   │                 │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Collibra / Alation + Confluent Schema Registry      │
-│  · Confluent Schema Registry = operational schema contract per topic        │
-│  · Collibra = business glossary + lineage + policy management               │
-│  · Snowflake → Collibra connector for table-level lineage                   │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  ML Training    │            │
-│  │  APIs           │  │  Tableau         │  │  (Snowflake     │            │
-│  │  (MongoDB /     │  │  (Snowflake)     │  │   Dataset →     │            │
-│  │  Redis)         │  │                 │  │   SageMaker /   │            │
-│  │                 │  │                 │  │   Vertex)       │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources — any cloud or on-prem"]
+        S1[Web / Clickstream]
+        S2[Mobile App Events]
+        S3[IoT Edge Devices]
+        S4[Microservices]
+        S5[Debezium CDC · Kafka Connect]
+    end
+
+    subgraph BROKER["Event Broker — Confluent Cloud · Kafka"]
+        B1[Confluent Cloud Cluster\nAWS / Azure / GCP region per workload]
+        B2[Schema Registry · ksqlDB\nAvro/Protobuf · 200+ managed connectors]
+    end
+
+    subgraph PROC["Stream Processing — Confluent Cloud · Apache Flink"]
+        P1[Enrichment\nTable API lookup join]
+        P2[Window Aggregation\nTUMBLE · HOP · CUMULATE · SESSION]
+        P3[CEP Fraud Detection\nFlink CEP + ksqlDB stateful queries]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(MongoDB Atlas\nHot · <10ms · multi-cloud · TTL)]
+        D2[(Snowflake · Snowpipe Streaming\nWarm + Cold · <1s · Dynamic Tables · 90d travel)]
+    end
+
+    subgraph CATALOG["Catalog & Governance"]
+        C1[Confluent Schema Registry\noperational schema contract per topic]
+        C2[Collibra Cloud\nbusiness glossary · lineage · policies]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[REST APIs\nMongoDB reads]
+        F2[Tableau\nSnowflake Live Query]
+        F3[Snowpark / SageMaker / Vertex\nML training]
+        F4[ksqlDB\nmaterialized view pull queries]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    BROKER -. schema contract .-> C1
+    D2 -. lineage .-> C2
+    D1 --> F1
+    D2 --> F2
+    D2 --> F3
+    BROKER --> F4
 ```
 
 ---

@@ -13,80 +13,55 @@ title: "4.8 — Streaming / Event-Driven · Multi-Cloud OSS Portable"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES  (any cloud or on-prem)                                      │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Edge    │  │  ices    │  │(Debezium)│    │
-│  │  stream  │  │  Events  │  │  Devices │  │  Events  │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Apache Kafka (managed MSK / Event Hubs / Confluent OSS)     │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Kafka Cluster (3+ brokers, multi-AZ)                        │          │
-│  │                                                              │          │
-│  │  Topics (partitioned by entity_id):                          │          │
-│  │  • clickstream.raw   • iot.telemetry   • cdc.{table}        │          │
-│  │  • orders.events     • alerts.output   • dlq.{topic}        │          │
-│  │                                                              │          │
-│  │  Apicurio Registry / Confluent SR → Avro / Protobuf schema  │          │
-│  │  Kafka Connect (Debezium, S3 Sink, JDBC)                    │          │
-│  │  ksqlDB → lightweight stateful streaming SQL                │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Apache Flink (on K8s / YARN / standalone)              │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Fraud    │          │
-│  │  (Async I/O     │   │  Aggregations    │   │  Pattern        │          │
-│  │   Cassandra /   │   │  tumbling/       │   │  Detection      │          │
-│  │   Redis lookup) │   │  sliding/session │   │  (Flink CEP)    │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  MATERIALIZED    │   │  COLD STORE     │          │
-│  │  Apache         │   │  VIEWS           │──▶│  Apache Iceberg │          │
-│  │  Cassandra /    │   │  ksqlDB          │   │  on S3/ADLS/GCS │          │
-│  │  ScyllaDB       │   │  (push queries)  │   │                 │          │
-│  │                 │   │                  │   │ • ACID + time   │          │
-│  │ • <5ms reads    │   │ • pull queries   │   │   travel        │          │
-│  │ • Wide rows     │   │ • topic → table  │   │ • Z-order       │          │
-│  │ • Linear scale  │   │   materialization│   │   compaction    │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Iceberg REST Catalog (Nessie or Polaris)                  │
-│  · Tables registered centrally; Flink + Trino + Spark share catalog         │
-│  · Apicurio Registry = Avro/Protobuf schema contract per topic              │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  ML Training    │            │
-│  │  APIs           │  │  Apache Superset │  │  Spark / Ray    │            │
-│  │  (Cassandra)    │  │  (Trino backend) │  │  (Iceberg)      │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources — any cloud or on-prem"]
+        S1[Web / Clickstream]
+        S2[Mobile / IoT Devices]
+        S3[Microservices]
+        S4[Debezium CDC]
+    end
+
+    subgraph BROKER["Event Broker — Apache Kafka"]
+        B1[Kafka Cluster · MSK / Event Hubs / self-hosted\npartitioned by entity_id · mTLS]
+        B2[Apicurio Registry · Confluent SR\nAvro / Protobuf schema contract]
+        B3[ksqlDB · Kafka Connect\nstateful SQL · Debezium · S3 Sink]
+    end
+
+    subgraph PROC["Stream Processing — Apache Flink"]
+        P1[Enrichment\nAsync I/O Cassandra / Redis]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[CEP Fraud Detection\nFlink CEP library]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Cassandra / ScyllaDB\nHot · <5ms · TTL · linear scale)]
+        D2[ksqlDB Materialized Views\nReal-time pull queries]
+        D3[Apache Iceberg · S3/ADLS/GCS\nCold · ACID · z-order · time-travel]
+    end
+
+    subgraph CATALOG["Catalog"]
+        C1[Nessie / Polaris REST Catalog\nFlink + Trino + Spark shared]
+        C2[Trino\nSQL federation · Iceberg + Cassandra + Kafka]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[REST APIs\nCassandra reads]
+        F2[Apache Superset\nTrino dashboards]
+        F3[Spark / Ray\nIceberg ML training]
+        F4[ksqlDB pull queries\nreal-time lookups]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D3
+    BROKER --> D2
+    D3 -. register .-> C1
+    C1 --> C2
+    D1 --> F1
+    C2 --> F2
+    D3 --> F3
+    D2 --> F4
 ```
 
 ---

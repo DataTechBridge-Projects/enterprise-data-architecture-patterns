@@ -13,79 +13,50 @@ title: "4.4 — Streaming / Event-Driven · Azure OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Azure   │  │  ices    │  │(Debezium │    │
-│  │  stream  │  │  Events  │  │  IoT Hub │  │  Events  │  │→ EH)     │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Azure Event Hubs (Kafka API endpoint)                       │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Event Hubs Namespace → exposed as Kafka bootstrap endpoint  │          │
-│  │  Kafka Producer SDK → uses SASL/OAUTHBEARER (Azure AD)       │          │
-│  │                                                              │          │
-│  │  Topics:                                                     │          │
-│  │  • clickstream.raw   • iot.telemetry   • cdc.{table}        │          │
-│  │  • orders.events     • alerts.output                        │          │
-│  │                                                              │          │
-│  │  Confluent Schema Registry (on AKS) → Avro enforcement      │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Apache Flink on AKS (Kubernetes Operator)              │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Fraud    │          │
-│  │  (Async I/O     │   │  Aggregations    │   │  Pattern        │          │
-│  │   Cosmos DB     │   │  tumbling/       │   │  Detection      │          │
-│  │   lookups)      │   │  sliding/session │   │  (Flink CEP     │          │
-│  │                 │   │                  │   │   library)      │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM STORE      │   │  COLD STORE     │          │
-│  │  Azure Cosmos DB│   │  Synapse Server- │──▶│  Delta Lake on  │          │
-│  │  (NoSQL API)    │   │  less SQL        │   │  ADLS Gen2      │          │
-│  │                 │   │  (external table │   │                 │          │
-│  │ • <10ms reads   │   │   over Delta)    │   │ • ACID writes   │          │
-│  │ • Change feed   │   │                  │   │ • Flink native  │          │
-│  │ • Global dist.  │   │                  │   │   Delta sink    │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Microsoft Purview + Hive Metastore (Flink SQL)                   │
-│  · Delta tables registered via Purview auto-scan of ADLS                    │
-│  · Flink SQL catalog → Hive-compatible for Delta table DDL                  │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  APIs / Funcs   │  │  BI / Reporting  │  │  Azure ML       │            │
-│  │  (Cosmos feed)  │  │  Apache Superset │  │  (ADLS Delta)   │            │
-│  │  Azure Functions│  │  Power BI        │  │  / Databricks   │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[IoT Hub]
+        S3[Microservices]
+        S4[Debezium CDC → Event Hubs]
+    end
+
+    subgraph BROKER["Event Broker — Event Hubs Kafka API"]
+        B1[Event Hubs as Kafka endpoint\nSASL/OAUTHBEARER · Azure AD]
+        B2[Confluent Schema Registry on AKS\nAvro enforcement]
+    end
+
+    subgraph PROC["Stream Processing — Apache Flink on AKS"]
+        P1[Enrichment\nAsync I/O Cosmos DB]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[CEP Fraud Detection\nFlink CEP library]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Cosmos DB NoSQL\nHot · <10ms · change feed)]
+        D2[Delta Lake on ADLS Gen2\nCold · ACID · Flink native sink]
+    end
+
+    subgraph CATALOG["Catalog & Governance"]
+        C1[Microsoft Purview\nauto-scan ADLS · lineage · PII]
+        C2[Synapse Serverless SQL\nexternal Delta tables]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[Azure Functions\nCosmos change feed]
+        F2[Superset · Power BI\nSynapse Serverless]
+        F3[Azure ML\nDelta training data]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    D2 -. auto-scan .-> C1
+    D2 --> C2
+    D1 --> F1
+    C2 --> F2
+    D2 --> F3
 ```
 
 ---

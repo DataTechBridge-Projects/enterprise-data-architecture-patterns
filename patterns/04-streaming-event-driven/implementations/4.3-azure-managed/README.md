@@ -13,83 +13,54 @@ title: "4.3 — Streaming / Event-Driven · Azure Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Azure   │  │  ices    │  │(Azure SQL│    │
-│  │  stream  │  │  Events  │  │  IoT Hub │  │  Events  │  │ CDC/ADF) │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Azure Event Hubs                                            │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Event Hubs Namespace (Premium tier)                         │          │
-│  │                                                              │          │
-│  │  Event Hubs (partitioned by entity_id):                      │          │
-│  │  • eh-clickstream     (32 partitions)                        │          │
-│  │  • eh-iot-telemetry   (64 partitions)                        │          │
-│  │  • eh-orders          (16 partitions)                        │          │
-│  │  • eh-cdc             (16 partitions)                        │          │
-│  │                                                              │          │
-│  │  Event Hubs Schema Registry                                  │          │
-│  │  → Avro / JSON Schema per hub · compatible evolution         │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Azure Stream Analytics                                 │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  Anomaly        │          │
-│  │  (Reference     │   │  Aggregations    │   │  Detection      │          │
-│  │   Data from     │   │  TUMBLINGWINDOW  │   │  (built-in ML   │          │
-│  │   Blob Storage) │   │  SLIDINGWINDOW   │   │  AnomalyDetect- │          │
-│  │                 │   │  SESSIONWINDOW   │   │  ion function)  │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM STORE      │   │  COLD STORE     │          │
-│  │  Azure Cosmos DB│   │  Azure Synapse   │──▶│  ADLS Gen2      │          │
-│  │  (NoSQL API)    │   │  Analytics       │   │  (Parquet/Delta)│          │
-│  │                 │   │                  │   │                 │          │
-│  │ • <10ms reads   │   │ • Synapse SQL     │   │ • ADF pipeline  │          │
-│  │ • Global dist.  │   │   serverless      │   │   batch loads   │          │
-│  │ • Change feed   │   │ • Power BI Direct │   │ • Long retention│          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Microsoft Purview                                   │
-│  · Auto-scan Event Hubs, Cosmos DB, Synapse, ADLS                           │
-│  · Lineage: Event Hubs → ASA → Cosmos DB / Synapse                          │
-│  · Data classification: PII tagging, sensitivity labels                     │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI Dashboards   │  │  ML / Azure ML  │            │
-│  │  APIs           │  │  Power BI        │  │  Training        │            │
-│  │  (Cosmos DB)    │  │  (Synapse Direct)│  │  (ADLS cold)    │            │
-│  │  Azure Functions│  │                 │  │                 │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[Mobile App Events]
+        S3[Azure IoT Hub]
+        S4[Microservices]
+        S5[Azure SQL CDC · ADF]
+    end
+
+    subgraph BROKER["Event Broker — Azure Event Hubs Premium"]
+        B1[Event Hubs Namespace\npartitioned by entity_id]
+        B2[Event Hubs Schema Registry\nAvro / JSON Schema per hub]
+    end
+
+    subgraph PROC["Stream Processing — Azure Stream Analytics"]
+        P1[Enrichment\nBlob Storage reference join]
+        P2[TUMBLINGWINDOW · SLIDINGWINDOW\nSESSIONWINDOW aggregations]
+        P3[AnomalyDetection\nSpikeAndDip · ChangePoint]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Cosmos DB NoSQL\nHot · <10ms · change feed)]
+        D2[(Synapse Analytics Dedicated\nWarm · columnstore · Power BI Direct)]
+        D3[ADLS Gen2 · Delta Lake\nCold · ADF Avro→Delta · long retention]
+    end
+
+    subgraph CATALOG["Catalog & Governance — Microsoft Purview"]
+        C1[Auto-scan · lineage\nEvent Hubs → ASA → Cosmos/Synapse/ADLS]
+        C2[PII classification · sensitivity labels\nbusiness glossary]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[Azure Functions\nCosmos change feed]
+        F2[Power BI\nSynapse DirectQuery]
+        F3[Azure ML\nADLS Delta training data]
+        F4[Synapse Serverless SQL\nad-hoc on Delta]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    BROKER -.->|Event Hubs Capture| D3
+    D1 & D2 & D3 -. auto-scan .-> CATALOG
+    D1 --> F1
+    D2 --> F2
+    D3 --> F3
+    D3 --> F4
 ```
 
 ---

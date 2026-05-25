@@ -13,81 +13,55 @@ title: "4.5 — Streaming / Event-Driven · GCP Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Cloud   │  │  ices    │  │(Datastream│   │
-│  │  stream  │  │  Events  │  │  IoT Core│  │  Events  │  │ CDC)     │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Google Cloud Pub/Sub                                        │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Pub/Sub Topics (global, auto-replicated):                   │          │
-│  │  • clickstream-raw       • iot-telemetry                     │          │
-│  │  • orders-events         • cdc-{table}                       │          │
-│  │  • alerts-output                                             │          │
-│  │                                                              │          │
-│  │  Pub/Sub Schema → Protobuf / Avro schema enforcement         │          │
-│  │  Dead Letter Topics → failed message capture                 │          │
-│  │  Seek / Replay → replay from any timestamp (7-day window)    │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Google Cloud Dataflow (Apache Beam)                    │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  Anomaly /      │          │
-│  │  (side input    │   │  Aggregations    │   │  ML Scoring     │          │
-│  │   from Bigtable │   │  Fixed/Sliding/  │   │  (Vertex AI     │          │
-│  │   lookups)      │   │  Session windows │   │   Endpoint)     │          │
-│  │                 │   │                  │   │                 │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM / COLD     │   │  COLD ARCHIVE   │          │
-│  │  Cloud Bigtable │   │  BigQuery        │──▶│  GCS            │          │
-│  │                 │   │  (streaming      │   │  (Parquet via   │          │
-│  │ • <10ms reads   │   │   inserts +      │   │   Dataflow)     │          │
-│  │ • HBase API     │   │   partitioned    │   │ • Long-term     │          │
-│  │ • Auto-scale    │   │   tables)        │   │   replay store  │          │
-│  │ • TTL per col   │   │ • Standard SQL   │   │                 │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — Google Dataplex + Data Catalog                      │
-│  · BigQuery tables auto-cataloged; lineage via Dataflow → BQ lineage API    │
-│  · Cloud DLP → PII detection on BigQuery columns                            │
-│  · Dataplex data quality rules applied at BQ table level                    │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  ML / Vertex AI │            │
-│  │  APIs           │  │  Looker          │  │  Training        │            │
-│  │  (Bigtable)     │  │  (BigQuery)      │  │  (GCS / BQ)     │            │
-│  │  Cloud Run      │  │  Looker Studio   │  │                 │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[Mobile App Events]
+        S3[Cloud IoT Core]
+        S4[Microservices]
+        S5[Datastream CDC]
+    end
+
+    subgraph BROKER["Event Broker — Cloud Pub/Sub"]
+        B1[Pub/Sub Topics · global auto-replicated\nProtobuf / Avro schema enforcement]
+        B2[Dead Letter Topics\nSeeked replay up to 7 days]
+    end
+
+    subgraph PROC["Stream Processing — Cloud Dataflow · Apache Beam"]
+        P1[Enrichment\nBigtable side input lookup]
+        P2[Window Aggregation\nFixed · Sliding · Session]
+        P3[ML Scoring\nVertex AI Online Endpoint]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Cloud Bigtable\nHot · <10ms · HBase API · TTL)]
+        D2[(BigQuery\nWarm + Cold · streaming inserts · partitioned)]
+        D3[GCS Parquet\nArchive · Dataflow FileIO]
+    end
+
+    subgraph CATALOG["Catalog & Governance"]
+        C1[Google Data Catalog · Dataplex\nauto-catalog BQ · lineage API · quality rules]
+        C2[Cloud DLP\nPII detection · policy tag auto-assign]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[Cloud Run / APIs\nBigtable reads]
+        F2[Looker · Looker Studio\nBigQuery native]
+        F3[Vertex AI Pipelines\ntraining datasets]
+        F4[BigQuery ML\nin-place SQL ML]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    BROKER -.->|FileIO sink| D3
+    D2 -. auto-catalog .-> C1
+    D2 -. DLP scan .-> C2
+    D1 --> F1
+    D2 --> F2
+    D2 --> F4
+    D3 --> F3
 ```
 
 ---

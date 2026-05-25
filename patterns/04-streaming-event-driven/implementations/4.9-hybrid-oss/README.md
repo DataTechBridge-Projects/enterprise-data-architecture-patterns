@@ -13,87 +13,54 @@ title: "4.9 — Streaming / Event-Driven · Hybrid OSS Self-Hosted"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES  (on-prem operational systems)                               │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Core    │  │  Manufact│  │   SCADA  │  │  Legacy  │  │  Retail  │    │
-│  │  Banking │  │  -uring  │  │   / IoT  │  │  ERP/CRM │  │  POS /   │    │
-│  │  Systems │  │  MES     │  │  Sensors │  │  Events  │  │  kiosk   │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ON-PREM CORE — Apache Kafka on Kubernetes (Strimzi Operator)               │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Kafka Cluster (3 brokers, local K8s cluster)                │          │
-│  │                                                              │          │
-│  │  Topics:                                                     │          │
-│  │  • txn.raw       • iot.telemetry   • erp.cdc.{table}        │          │
-│  │  • ops.events    • alerts.output   • dlq.{topic}            │          │
-│  │                                                              │          │
-│  │  Confluent Schema Registry (on-prem K8s)                    │          │
-│  │  → Avro schema enforcement per topic                         │          │
-│  │                                                              │          │
-│  │  Debezium (Kafka Connect) → CDC from on-prem DB/ERP          │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │                                   │ MirrorMaker 2 / Cluster Linking
-        │                                   ▼ (cloud burst topics)
-        │                   ┌─────────────────────────────┐
-        │                   │  Cloud Kafka (MSK/Confluent) │
-        │                   │  (burst / DR replica)        │
-        │                   └─────────────────────────────┘
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Apache Flink on Kubernetes (Flink Operator)            │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Fraud /  │          │
-│  │  (Async I/O     │   │  Aggregations    │   │  Anomaly        │          │
-│  │   Cassandra     │   │  tumbling/       │   │  Detection      │          │
-│  │   lookup)       │   │  sliding/session │   │  (Flink CEP)    │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES  (on-prem + cloud tiers)                                    │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  COLD STORE      │   │  CLOUD BURST    │          │
-│  │  Apache         │   │  Apache Iceberg  │──▶│  Cloud Object   │          │
-│  │  Cassandra      │   │  on MinIO        │   │  Storage        │          │
-│  │  (on-prem K8s)  │   │  (on-prem S3-   │   │  (aged-out data │          │
-│  │                 │   │   compatible)    │   │   S3/ADLS/GCS)  │          │
-│  │ • <5ms reads    │   │ • ACID tables    │   │ • Lifecycle     │          │
-│  │ • Linear scale  │   │ • Time travel    │   │   tiering       │          │
-│  │ • RF=3 local    │   │ • Z-order        │   │                 │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Iceberg REST Catalog (Project Nessie, on-prem K8s)        │
-│  · On-prem Nessie = authoritative catalog; cloud Nessie = read replica      │
-│  · Apache Ranger (on K8s) = column/row policies on Iceberg tables           │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS  (on-prem + cloud)                                               │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  Cloud ML       │            │
-│  │  APIs (on-prem) │  │  Apache Superset │  │  (burst to      │            │
-│  │  Cassandra reads│  │  (Trino, on-prem)│  │   cloud object  │            │
-│  │                 │  │                 │  │   storage)      │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["On-Prem Event Sources"]
+        S1[Core Banking / ERP]
+        S2[SCADA / IoT Sensors]
+        S3[Retail POS]
+        S4[Debezium CDC · on-prem DB]
+    end
+
+    subgraph BROKER["On-Prem Event Broker — Kafka · Strimzi on K8s"]
+        B1[Kafka 3-broker cluster · KRaft mode\nConfluent Schema Registry · Avro]
+        B2[MirrorMaker 2\nactive-passive DR replica → cloud Kafka]
+    end
+
+    subgraph PROC["Stream Processing — Apache Flink · K8s Operator"]
+        P1[Enrichment\nAsync I/O Cassandra lookup]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[CEP Fraud / Anomaly Detection\nFlink CEP library]
+    end
+
+    subgraph SERVING["Serving Stores — On-Prem + Cloud Tier"]
+        D1[(Cassandra · K8ssandra on K8s\nHot · <5ms · RF=3 · TTL)]
+        D2[Iceberg on MinIO · on-prem\nCold · ACID · S3A compatible]
+        D3[Cloud Object Storage · S3/ADLS/GCS\nLifecycle tiered from MinIO after 90d]
+    end
+
+    subgraph CATALOG["Catalog & Access Control"]
+        C1[Nessie REST Catalog · on-prem K8s\nauthoritative · git-branching]
+        C2[Apache Ranger · K8s\ncolumn masking · row filtering]
+        C3[Trino · on-prem K8s\nSQL federation · Iceberg + Cassandra]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[On-Prem REST APIs\nCassandra reads]
+        F2[Apache Superset\nTrino on-prem]
+        F3[Cloud ML Training\ncloud object storage]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    D2 -.->|lifecycle rule| D3
+    D2 -. register .-> C1
+    C1 -. policies .-> C2
+    C1 --> C3
+    D1 --> F1
+    C3 --> F2
+    D3 --> F3
 ```
 
 ---

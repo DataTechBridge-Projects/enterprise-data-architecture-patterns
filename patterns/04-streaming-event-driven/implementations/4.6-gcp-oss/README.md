@@ -13,77 +13,50 @@ title: "4.6 — Streaming / Event-Driven · GCP OSS on Cloud"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Cloud   │  │  ices    │  │(Datastream│   │
-│  │  stream  │  │  Events  │  │  IoT Core│  │  Events  │  │→ Pub/Sub) │   │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER — Cloud Pub/Sub                                               │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────┐          │
-│  │  Pub/Sub Topics (global):                                    │          │
-│  │  • clickstream.raw   • iot.telemetry   • cdc.{table}        │          │
-│  │  • orders.events     • alerts.output                        │          │
-│  │                                                              │          │
-│  │  Pub/Sub Schema → Protobuf enforcement at publish            │          │
-│  │  Confluent Schema Registry (on GKE) → Avro for Flink        │          │
-│  └──────────────────────────────────────────────────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Apache Flink on GKE (Flink Kubernetes Operator)        │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  CEP / Fraud    │          │
-│  │  (Async I/O     │   │  Aggregations    │   │  Pattern        │          │
-│  │   Bigtable      │   │  tumbling/       │   │  Detection      │          │
-│  │   lookups)      │   │  sliding/session │   │  (Flink CEP)    │          │
-│  │                 │   │                  │   │                 │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  COLD STORE      │   │  QUERY ENGINE   │          │
-│  │  Cloud Bigtable │   │  Apache Iceberg  │   │  Trino on GKE   │          │
-│  │                 │   │  on GCS          │   │                 │          │
-│  │ • <10ms reads   │   │ • ACID writes    │   │ • SQL over      │          │
-│  │ • HBase API     │   │ • Time travel    │   │   Iceberg + BQ  │          │
-│  │ • Auto-scale    │   │ • Z-order by     │   │ • Federation    │          │
-│  │ • Column TTL    │   │   entity_id      │   │   across stores │          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG — Apache Iceberg REST Catalog / Hive Metastore on GKE              │
-│  · Iceberg REST catalog registers all tables; Flink + Trino share catalog   │
-│  · Google Data Catalog auto-scan for discovery + lineage                    │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Analytics  │  │  ML / Vertex AI │            │
-│  │  APIs (Cloud    │  │  Apache Superset │  │  Training        │            │
-│  │  Run + Bigtable)│  │  (Trino backend) │  │  (GCS Iceberg)  │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[IoT Core]
+        S3[Microservices]
+        S4[Datastream CDC → Pub/Sub]
+    end
+
+    subgraph BROKER["Event Broker — Cloud Pub/Sub"]
+        B1[Pub/Sub Topics · global\nProtobuf schema enforcement]
+        B2[Confluent Schema Registry on GKE\nAvro for Flink consumers]
+    end
+
+    subgraph PROC["Stream Processing — Apache Flink on GKE"]
+        P1[Enrichment\nBigtable Async I/O lookup]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[CEP Fraud Detection\nFlink CEP library]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(Cloud Bigtable\nHot · <10ms · column TTL)]
+        D2[Apache Iceberg on GCS\nCold · ACID · z-order · time-travel]
+    end
+
+    subgraph CATALOG["Catalog"]
+        C1[Iceberg REST Catalog · GKE\nFlink + Trino shared catalog]
+        C2[Trino on GKE\nSQL federation · Iceberg + BQ + Bigtable]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[Cloud Run / APIs\nBigtable reads]
+        F2[Apache Superset\nTrino dashboards]
+        F3[Vertex AI Pipelines\nIceberg training data]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    D2 -. register snapshot .-> C1
+    C1 --> C2
+    D1 --> F1
+    C2 --> F2
+    D2 --> F3
 ```
 
 ---

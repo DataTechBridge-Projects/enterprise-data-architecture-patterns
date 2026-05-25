@@ -13,78 +13,54 @@ title: "4.1 — Streaming / Event-Driven · AWS Fully Managed"
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT SOURCES                                                              │
-│                                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │  Web /   │  │  Mobile  │  │   IoT /  │  │Microserv-│  │  DB CDC  │    │
-│  │  Click-  │  │  App     │  │  Sensor  │  │  ices    │  │(DMS/CDC) │    │
-│  │  stream  │  │  Events  │  │  Telemetry│  │  Events  │  │          │    │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘    │
-└───────┼─────────────┼─────────────┼──────────────┼─────────────┼──────────┘
-        │             │             │              │             │
-        ▼             ▼             ▼              ▼             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BROKER LAYER                                                         │
-│                                                                             │
-│  ┌──────────────────────────────┐   ┌──────────────────────────────┐       │
-│  │  Amazon Kinesis Data Streams │   │  Amazon MSK (Kafka)          │       │
-│  │                              │   │                              │       │
-│  │  • High-throughput ingest    │   │  • Kafka-native producers    │       │
-│  │  • 1–7 day retention         │   │  • Consumer groups           │       │
-│  │  • Shard-based scaling       │   │  • Topic-per-domain          │       │
-│  │  • KPL / SDK producers       │   │  • 7–30 day retention        │       │
-│  └──────────────┬───────────────┘   └──────────────┬───────────────┘       │
-└─────────────────┼────────────────────────────────── ┼──────────────────────┘
-                  │                                    │
-                  └────────────────┬───────────────────┘
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  STREAM PROCESSING — Kinesis Data Analytics (Apache Flink)                  │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  Enrichment     │   │  Windowed        │   │  Anomaly        │          │
-│  │  (lookup joins  │   │  Aggregations    │   │  Detection      │          │
-│  │   from DynamoDB)│   │  (tumbling/      │   │  (ML models via │          │
-│  │                 │   │   sliding/session│   │   SageMaker)    │          │
-│  │                 │   │   windows)       │   │                 │          │
-│  └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘          │
-└───────────┼────────────────────┼────────────────────── ┼───────────────────┘
-            │                    │                        │
-            └────────────────────┼────────────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SERVING STORES                                                             │
-│                                                                             │
-│  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐          │
-│  │  HOT STORE      │   │  WARM STORE      │   │  COLD STORE     │          │
-│  │  DynamoDB       │──▶│  Amazon Redshift │──▶│  S3 + Firehose  │          │
-│  │                 │   │  (materialized   │   │  (Parquet for   │          │
-│  │ • <10ms reads   │   │   aggregates)    │   │   replay/ML)    │          │
-│  │ • Point lookups │   │ • SQL analytics  │   │ • Iceberg table │          │
-│  │ • Session state │   │ • BI queries     │   │ • Long retention│          │
-│  └─────────────────┘   └─────────────────┘   └─────────────────┘          │
-└─────────────────────────────────────────────────────────────────────────────┘
-            │                    │                        │
-            ▼                    ▼                        ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CATALOG & GOVERNANCE — AWS Glue Data Catalog + Lake Formation (Cold path)  │
-│  · Schema Registry (MSK / Kinesis) for event schema enforcement             │
-│  · Glue Catalog registers S3/Iceberg tables for cold-path SQL access        │
-└──────────┬──────────────────────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CONSUMERS                                                                  │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│  │  Operational    │  │  BI / Dashboards │  │  ML / SageMaker │            │
-│  │  APIs           │  │                 │  │  Training        │            │
-│  │  (DynamoDB)     │  │  QuickSight     │  │  (S3 cold store) │            │
-│  │  Lambda triggers│  │  Redshift       │  │                 │            │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph SRC["Event Sources"]
+        S1[Web / Clickstream]
+        S2[Mobile App Events]
+        S3[IoT / Sensors]
+        S4[Microservices]
+        S5[DB CDC · DMS]
+    end
+
+    subgraph BROKER["Event Broker"]
+        B1[Kinesis Data Streams\nshards · KPL · on-demand]
+        B2[Amazon MSK · Kafka\ntopics · consumer groups]
+    end
+
+    subgraph PROC["Stream Processing — KDA · Apache Flink"]
+        P1[Enrichment\nDynamoDB lookup join]
+        P2[Window Aggregation\ntumbling · sliding · session]
+        P3[Anomaly Detection\nSageMaker endpoint]
+    end
+
+    subgraph SERVING["Serving Stores"]
+        D1[(DynamoDB\nHot · <10ms · TTL)]
+        D2[(Redshift\nWarm · SQL · BI)]
+        D3[S3 + Firehose · Iceberg\nCold · Parquet · replay]
+    end
+
+    subgraph CATALOG["Catalog & Governance"]
+        C1[MSK Schema Registry\nAvro / Protobuf / JSON]
+        C2[Glue Data Catalog · Lake Formation\ncold path tables · column/row RBAC]
+    end
+
+    subgraph CONSUME["Consumers"]
+        F1[Lambda / REST APIs\noperational reads]
+        F2[QuickSight\nreal-time dashboards]
+        F3[SageMaker\nML training]
+        F4[Athena\nad-hoc SQL on cold]
+    end
+
+    SRC --> BROKER
+    BROKER --> PROC
+    PROC --> D1 & D2
+    BROKER -.->|Firehose buffer| D3
+    D2 & D3 -. schema + catalog .-> CATALOG
+    D1 --> F1
+    D2 --> F2
+    D3 --> F3
+    CATALOG -.-> F4
 ```
 
 ---
