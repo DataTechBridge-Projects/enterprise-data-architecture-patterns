@@ -89,9 +89,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage — GCS + BigQuery"]
-        Z1[GCS Raw\ngs://{domain}-raw/]
-        Z2[GCS Curated\ngs://{domain}-curated/]
-        Z3[BigQuery Dataset\n{domain}_products]
+        Z1[GCS Raw\ngs://domain-raw/]
+        Z2[GCS Curated\ngs://domain-curated/]
+        Z3[BigQuery Dataset\ndomain_products]
     end
 
     subgraph Catalog["Dataplex + Data Catalog + Analytics Hub"]

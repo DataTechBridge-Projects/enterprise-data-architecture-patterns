@@ -87,9 +87,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage — Cloud Object Store + Delta Lake"]
-        Z1[Delta Bronze\n{cloud}://{domain}-bronze/]
-        Z2[Delta Silver\n{cloud}://{domain}-silver/]
-        Z3[Delta Gold\n{cloud}://{domain}-gold/]
+        Z1[Delta Bronze\ncloud://domain-bronze/]
+        Z2[Delta Silver\ncloud://domain-silver/]
+        Z3[Delta Gold\ncloud://domain-gold/]
     end
 
     subgraph Catalog["Unity Catalog + Collibra"]

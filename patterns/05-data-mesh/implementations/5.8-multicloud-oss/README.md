@@ -195,7 +195,7 @@ flowchart TD
     J3 --> J4[Soda Core Scan\nData Quality Gate]
     J4 -->|pass| J5[dbt Core Run\nCurated → Product Iceberg]
     J4 -->|fail| A1[Airflow Alert → Slack → domain team]
-    J5 --> J6[Nessie Tag\ncreate {product}@v1 snapshot]
+    J5 --> J6[Nessie Tag\ncreate product@v1 snapshot]
     J6 --> J7[DataHub + OpenMetadata API\nPublish contract + metadata]
     J7 --> N1[Kafka Topic\nproduct.published event → subscribers]
 ```

@@ -88,9 +88,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage — S3 + Iceberg"]
-        Z1[Iceberg Raw\ns3://{domain}-raw/]
-        Z2[Iceberg Curated\ns3://{domain}-curated/]
-        Z3[Iceberg Products\ns3://{domain}-products/]
+        Z1[Iceberg Raw\ns3://domain-raw/]
+        Z2[Iceberg Curated\ns3://domain-curated/]
+        Z3[Iceberg Products\ns3://domain-products/]
     end
 
     subgraph Catalog["DataHub + Apache Ranger"]

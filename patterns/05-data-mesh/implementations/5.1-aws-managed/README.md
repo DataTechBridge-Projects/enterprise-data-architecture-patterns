@@ -88,9 +88,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage (per domain) — S3 + Redshift"]
-        Z1[S3 Raw\ns3://{domain}-raw/]
-        Z2[S3 Curated\ns3://{domain}-curated/]
-        Z3[Redshift Schema\n{domain}.*]
+        Z1[S3 Raw\ns3://domain-raw/]
+        Z2[S3 Curated\ns3://domain-curated/]
+        Z3[Redshift Schema\ndomain.*]
     end
 
     subgraph Catalog["Glue Catalog + Lake Formation + DataZone"]

@@ -88,9 +88,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage — ADLS Gen2 + Synapse"]
-        Z1[ADLS Raw\nabfss://{domain}/raw/]
-        Z2[ADLS Curated\nabfss://{domain}/curated/]
-        Z3[Synapse SQL Pool\n{domain}_db]
+        Z1[ADLS Raw\nabfss://domain/raw/]
+        Z2[ADLS Curated\nabfss://domain/curated/]
+        Z3[Synapse SQL Pool\ndomain_db]
     end
 
     subgraph Catalog["Purview + Azure AD"]

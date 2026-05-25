@@ -88,9 +88,9 @@ flowchart LR
     end
 
     subgraph DomainStorage["Domain Storage — ADLS + Delta Lake"]
-        Z1[Delta Raw\nabfss://{domain}/raw/]
-        Z2[Delta Curated\nabfss://{domain}/curated/]
-        Z3[Delta Products\nabfss://{domain}/products/]
+        Z1[Delta Raw\nabfss://domain/raw/]
+        Z2[Delta Curated\nabfss://domain/curated/]
+        Z3[Delta Products\nabfss://domain/products/]
     end
 
     subgraph Catalog["DataHub + Apache Ranger"]
