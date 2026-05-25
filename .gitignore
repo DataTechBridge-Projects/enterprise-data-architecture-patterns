@@ -4,3 +4,8 @@ _site/
 .sass-cache/
 *.gem
 Gemfile.lock
+.playwright-mcp/
+BUILD-PROMPT.md
+architecture-index.md
+project.md
+snapshot.md
