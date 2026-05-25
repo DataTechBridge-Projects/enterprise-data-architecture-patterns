@@ -278,6 +278,28 @@ const BASE = location.pathname.replace(/\/$/, '');
 
 const NAV = [
   {
+    id: 'snowflake', label: 'Snowflake Data Cloud',
+    groups: [
+      { label: 'Implementations', items: [
+        { id: 'sf.1-edw',      label: 'SF.1 · Classic EDW & BI',         badge: 'managed', path: 'platforms/snowflake/sf.1-edw/README.md' },
+        { id: 'sf.2-lakehouse',label: 'SF.2 · Snowflake Lakehouse',       badge: 'managed', path: 'platforms/snowflake/sf.2-lakehouse/README.md' },
+        { id: 'sf.3-ai-ml',    label: 'SF.3 · AI / ML (Snowpark+Cortex)', badge: 'managed', path: 'platforms/snowflake/sf.3-ai-ml/README.md' },
+        { id: 'sf.4-governed', label: 'SF.4 · Governed & Compliance',     badge: 'managed', path: 'platforms/snowflake/sf.4-governed/README.md' },
+      ]},
+    ]
+  },
+  {
+    id: 'databricks', label: 'Databricks Lakehouse Platform',
+    groups: [
+      { label: 'Implementations', items: [
+        { id: 'db.1-lakehouse',  label: 'DB.1 · Delta Lakehouse',          badge: 'managed', path: 'platforms/databricks/db.1-lakehouse/README.md' },
+        { id: 'db.2-streaming',  label: 'DB.2 · Streaming & Real-Time',    badge: 'managed', path: 'platforms/databricks/db.2-streaming/README.md' },
+        { id: 'db.3-ai-ml',      label: 'DB.3 · AI / ML Platform',         badge: 'managed', path: 'platforms/databricks/db.3-ai-ml/README.md' },
+        { id: 'db.4-data-mesh',  label: 'DB.4 · Data Mesh (Unity Catalog)',badge: 'managed', path: 'platforms/databricks/db.4-data-mesh/README.md' },
+      ]},
+    ]
+  },
+  {
     id: '01', label: 'Pattern 01 — Enterprise Data Warehouse',
     groups: [
       { label: 'AWS', items: [
