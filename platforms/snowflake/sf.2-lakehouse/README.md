@@ -14,6 +14,7 @@ title: "sf.2 — Snowflake · Lakehouse with Iceberg"
 ## Architecture Overview
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart TD
     subgraph SRC["Data Sources"]
         S1[OLTP Databases\nPostgres · MySQL · Oracle]
@@ -84,6 +85,7 @@ flowchart TD
 ## Data Flow
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
     subgraph Sources
         A1[(OLTP DBs)]

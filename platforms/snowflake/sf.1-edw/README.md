@@ -14,6 +14,7 @@ title: "sf.1 — Snowflake · Classic EDW & BI"
 ## Architecture Overview
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart TD
     subgraph SRC["Data Sources"]
         S1[ERP / OLTP\nSAP · Oracle · SQL Server]
@@ -71,6 +72,7 @@ flowchart TD
 ## Data Flow
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
     subgraph Sources
         A1[(ERP / OLTP\nSAP · Oracle)]

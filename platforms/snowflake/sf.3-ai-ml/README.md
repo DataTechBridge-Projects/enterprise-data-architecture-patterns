@@ -14,6 +14,7 @@ title: "sf.3 — Snowflake · AI / ML with Snowpark and Cortex"
 ## Architecture Overview
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart TD
     subgraph SRC["Data Sources"]
         S1[OLTP / ERP\nSAP · Oracle · Postgres]
@@ -78,6 +79,7 @@ flowchart TD
 ## Data Flow
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
     subgraph Sources
         A1[(OLTP / ERP)]

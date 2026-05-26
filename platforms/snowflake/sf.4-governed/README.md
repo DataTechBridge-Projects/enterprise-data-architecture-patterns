@@ -15,6 +15,7 @@ title: "sf.4 — Snowflake · Governed and Compliance-First"
 ## Architecture Overview
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart TD
     subgraph SRC["Data Sources"]
         S1[EHR and Clinical Systems\nHL7 · FHIR · Epic]
@@ -86,6 +87,7 @@ flowchart TD
 ## Data Flow
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
     subgraph Sources
         A1[(EHR / Clinical)]
