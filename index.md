@@ -59,6 +59,37 @@ AXIS 3 — Tool Stack               AXIS 4 — Processing Paradigm
 
 ## Currently Documented
 
+### Snowflake Data Cloud
+
+| # | Implementation | Stack | Key Tools |
+|---|---------------|-------|-----------|
+| SF.1 | Classic EDW & BI | Fully Managed | Fivetran + Snowflake + dbt Cloud + Tableau / Power BI |
+| SF.2 | Snowflake Lakehouse | Hybrid | Airbyte + Snowflake + Apache Iceberg + dbt Core + Airflow |
+| SF.3 | AI / ML (Snowpark + Cortex) | Fully Managed | Fivetran + Snowflake + Snowpark ML + Cortex AI + Streamlit |
+| SF.4 | Governed & Compliance | Fully Managed | Fivetran + Snowflake DDM + Row Access Policies + Clean Room + Collibra |
+
+### Databricks Lakehouse Platform
+
+| # | Implementation | Stack | Key Tools |
+|---|---------------|-------|-----------|
+| DB.1 | Delta Lakehouse | Fully Managed | Autoloader + Delta Live Tables + dbt Cloud + Databricks SQL + Tableau |
+| DB.2 | Streaming & Real-Time | Fully Managed | Kafka + Structured Streaming + Delta Live Tables + Delta Lake |
+| DB.3 | AI / ML Platform | Fully Managed | Databricks + MLflow + Feature Store + Vector Search + LangChain |
+| DB.4 | Data Mesh (Unity Catalog) | Fully Managed | Unity Catalog + domain workspaces + dbt Cloud + Collibra |
+
+### Pattern 01 — Enterprise Data Warehouse
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 1.1 | AWS | Fully Managed | Redshift + AWS Glue + dbt Cloud + QuickSight / Tableau |
+| 1.2 | AWS | OSS on Cloud | Redshift + Airbyte + dbt Core + Airflow + Superset |
+| 1.3 | Azure | Fully Managed | Synapse Analytics + ADF + dbt Cloud + Power BI |
+| 1.4 | Azure | OSS on Cloud | Synapse + Airbyte + dbt Core + Airflow + Superset |
+| 1.5 | GCP | Fully Managed | BigQuery + Datastream + dbt Cloud + Looker |
+| 1.6 | GCP | OSS on Cloud | BigQuery + Airbyte + dbt Core + Airflow + Superset |
+| 1.7 | Multi-Cloud | Fully Managed | Snowflake + Fivetran + dbt Cloud + Tableau |
+| 1.8 | Multi-Cloud | OSS on Cloud | Snowflake + Airbyte + dbt Core + Airflow + Metabase |
+
 ### Pattern 02 — Data Lake
 
 | # | Cloud | Stack | Key Tools |
@@ -112,3 +143,71 @@ AXIS 3 — Tool Stack               AXIS 4 — Processing Paradigm
 | 5.6 | GCP | OSS on Cloud | GCS + Iceberg + DataHub + dbt Core + Trino on GKE + Airflow |
 | 5.7 | Multi-Cloud | Fully Managed | Databricks Unity Catalog + Delta Lake + dbt Cloud + Collibra |
 | 5.8 | Multi-Cloud | OSS Portable | Iceberg + Nessie Catalog + DataHub + OpenMetadata + dbt Core + Trino |
+
+### Pattern 06 — Data Fabric
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 6.1 | AWS | Fully Managed | AWS Glue + Lake Formation + Athena Federation + Macie + DataZone |
+| 6.2 | Azure | Fully Managed | Azure Purview + Synapse Link + Azure API Management + Defender |
+| 6.3 | GCP | Fully Managed | Dataplex + BigQuery Omni + Data Catalog + Chronicle |
+| 6.4 | Multi-Cloud | Fully Managed | Informatica IDMC + Collibra + Talend + Starburst |
+| 6.5 | Multi-Cloud | OSS Portable | Apache Atlas + Trino + OpenMetadata + Apache Ranger |
+| 6.6 | Hybrid | Fully Managed | Informatica IDMC + Collibra + IBM Cloud Pak for Data |
+| 6.7 | Hybrid | OSS Self-Hosted | Apache Atlas + Trino + Apache Ranger + DataHub |
+
+### Pattern 07 — Operational Analytics Platform
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 7.1 | AWS | Fully Managed | Aurora + DMS (CDC) + Redshift (ODS) + QuickSight |
+| 7.2 | AWS | OSS on Cloud | PostgreSQL + Debezium + Kafka + Flink + Iceberg + Superset |
+| 7.3 | Azure | Fully Managed | Azure SQL + Synapse Link + Cosmos DB Analytical Store + Power BI |
+| 7.4 | Azure | OSS on Cloud | PostgreSQL + Debezium + Event Hubs + Delta Lake + Superset |
+| 7.5 | GCP | Fully Managed | Cloud Spanner + Datastream (CDC) + BigQuery + Looker |
+| 7.6 | GCP | OSS on Cloud | PostgreSQL + Debezium + Pub/Sub + Iceberg + Superset |
+| 7.7 | Multi-Cloud | Fully Managed | CockroachDB / SingleStore + Fivetran + Snowflake + Tableau |
+| 7.8 | Hybrid | OSS Self-Hosted | PostgreSQL + Debezium + Kafka + Apache Pinot / Druid + Superset |
+
+### Pattern 08 — AI / ML Data Platform
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 8.1 | AWS | Fully Managed | SageMaker Feature Store + SageMaker Pipelines + OpenSearch (vector) + Bedrock |
+| 8.2 | AWS | OSS on Cloud | Feast + MLflow + Airflow + Qdrant / Weaviate + LangChain |
+| 8.3 | Azure | Fully Managed | Azure ML Feature Store + Azure ML + Azure AI Search + Azure OpenAI |
+| 8.4 | Azure | OSS on Cloud | Feast + MLflow + Airflow + Qdrant + LangChain on AKS |
+| 8.5 | GCP | Fully Managed | Vertex AI Feature Store + Vertex Pipelines + Vertex Vector Search + Gemini |
+| 8.6 | GCP | OSS on Cloud | Feast + MLflow + Kubeflow + Weaviate on GKE + LangChain |
+| 8.7 | Multi-Cloud | Fully Managed | Databricks Feature Store + MLflow + Vector Search + dbt Cloud |
+| 8.8 | Multi-Cloud | OSS Portable | Feast + MLflow + Airflow + Qdrant + LangChain + dbt Core |
+| 8.9 | Hybrid | OSS Self-Hosted | Feast + MLflow + Kubeflow + Qdrant on K8s + Ollama |
+
+### Pattern 09 — Governed / Compliance-First Platform
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 9.1 | AWS | Fully Managed | Redshift + Lake Formation (RBAC/ABAC) + Macie + CloudTrail + AWS KMS |
+| 9.2 | AWS | OSS on Cloud | S3 + Iceberg + Apache Ranger + OpenMetadata + Debezium (audit) |
+| 9.3 | Azure | Fully Managed | Synapse + Purview + Azure Policy + Key Vault + Microsoft Defender |
+| 9.4 | Azure | OSS on Cloud | ADLS + Delta Lake + Apache Ranger + Collibra + Azure Key Vault |
+| 9.5 | GCP | Fully Managed | BigQuery + Data Catalog + DLP API + Cloud KMS + Dataplex |
+| 9.6 | GCP | OSS on Cloud | GCS + Iceberg + Apache Ranger + OpenMetadata + Cloud KMS |
+| 9.7 | Multi-Cloud | Fully Managed | Snowflake RBAC + Dynamic Masking + Data Clean Room + Collibra + Fivetran |
+| 9.8 | Multi-Cloud | OSS Portable | Iceberg + Apache Ranger + OpenMetadata + HashiCorp Vault + Trino |
+| 9.9 | Hybrid | Fully Managed | Informatica IDMC + Collibra + IBM Guardium + Protegrity |
+| 9.10 | Hybrid | OSS Self-Hosted | Apache Atlas + Ranger + HashiCorp Vault + OpenMetadata + Audit Sinks |
+
+### Pattern 10 — Self-Serve Analytics Engineering Platform
+
+| # | Cloud | Stack | Key Tools |
+|---|-------|-------|-----------|
+| 10.1 | AWS | Fully Managed | Redshift + dbt Cloud + AtScale / Cube Cloud + Tableau / Looker |
+| 10.2 | AWS | OSS on Cloud | Redshift / Trino + dbt Core + Cube.js + Superset + Airflow |
+| 10.3 | Azure | Fully Managed | Synapse + dbt Cloud + Power BI (semantic model) + AtScale |
+| 10.4 | Azure | OSS on Cloud | Synapse / DuckDB + dbt Core + Cube.js + Superset + Airflow |
+| 10.5 | GCP | Fully Managed | BigQuery + dbt Cloud + Looker (LookML semantic layer) |
+| 10.6 | GCP | OSS on Cloud | BigQuery + dbt Core + Cube.js + Superset + Airflow |
+| 10.7 | Multi-Cloud | Fully Managed | Snowflake + dbt Cloud + Tableau + AtScale / dbt Semantic Layer |
+| 10.8 | Multi-Cloud | OSS Portable | DuckDB / Trino + dbt Core + Cube.js + Superset + Airflow |
+| 10.9 | Hybrid | OSS Self-Hosted | PostgreSQL + dbt Core + Cube.js + Superset + Airflow on K8s |
